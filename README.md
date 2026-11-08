@@ -1,4 +1,4 @@
-# tsis1Linux
+# oci-platform
 
 A small Go REST API for managing todo tasks, with JWT-based auth and refresh-token rotation. Built as the application layer for a Linux/DevOps coursework project (3-tier deploy: Nginx → this API → Postgres).
 

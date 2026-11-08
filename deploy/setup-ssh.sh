@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SSH setup for tsis1Linux, in two steps. Do them in this order:
+# SSH setup for oci-platform, in two steps. Do them in this order:
 #
 #   sudo ./setup-ssh.sh key <user> <public-key-file>   # authorize a key for a user
 #   sudo ./setup-ssh.sh harden                         # key-only login, limited groups

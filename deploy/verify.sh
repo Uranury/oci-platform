@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that users, sudo rules, file access, SSH settings and services match the
-# tsis1Linux role table. Prints PASS or FAIL per check; exits 1 if any check fails.
+# oci-platform role table. Prints PASS or FAIL per check; exits 1 if any check fails.
 #
 # Usage: sudo ./verify.sh app   # on mainapp
 #        sudo ./verify.sh db    # on main-db

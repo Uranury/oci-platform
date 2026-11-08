@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Uranury/tsis1Linux/internal/auth"
-	"github.com/Uranury/tsis1Linux/internal/config"
-	"github.com/Uranury/tsis1Linux/internal/db"
-	"github.com/Uranury/tsis1Linux/internal/handler"
-	"github.com/Uranury/tsis1Linux/internal/repo"
-	"github.com/Uranury/tsis1Linux/internal/service"
-	"github.com/Uranury/tsis1Linux/pkg/dbutil"
+	"github.com/Uranury/oci-platform/internal/auth"
+	"github.com/Uranury/oci-platform/internal/config"
+	"github.com/Uranury/oci-platform/internal/db"
+	"github.com/Uranury/oci-platform/internal/handler"
+	"github.com/Uranury/oci-platform/internal/repo"
+	"github.com/Uranury/oci-platform/internal/service"
+	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

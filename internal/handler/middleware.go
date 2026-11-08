@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Uranury/tsis1Linux/internal/auth"
+	"github.com/Uranury/oci-platform/internal/auth"
 )
 
 // requireAuth wraps next so it only runs when the request carries a valid

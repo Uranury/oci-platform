@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs the sudo rules from the tsis1Linux role table, one file per role.
+# Installs the sudo rules from the oci-platform role table, one file per role.
 # Safe to run repeatedly: each file is validated, then (re)installed.
 #
 # Usage: sudo ./setup-sudoers.sh app   # on mainapp

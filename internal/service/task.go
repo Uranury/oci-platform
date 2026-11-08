@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Uranury/tsis1Linux/internal/models"
-	"github.com/Uranury/tsis1Linux/internal/repo"
+	"github.com/Uranury/oci-platform/internal/models"
+	"github.com/Uranury/oci-platform/internal/repo"
 	"github.com/google/uuid"
 )
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the directory layout, service user and sample files for tsis1Linux.
+# Creates the directory layout, service user and sample files for oci-platform.
 # Safe to run repeatedly: existing files are never overwritten.
 #
 # Usage: sudo ./setup-fs.sh app    # on the app instance (nginx + API)

@@ -1,7 +1,7 @@
-# tsis1Linux infrastructure scripts
+# oci-platform infrastructure scripts
 
 Scripts that set up users, permissions, SSH and the systemd service for the
-tsis1Linux todo API on two Ubuntu 24.04 machines (OCI, ARM64):
+oci-platform todo API on two Ubuntu 24.04 machines (OCI, ARM64):
 
 - **mainapp**: public. nginx and the Go API.
 - **main-db**: private, no public IP. PostgreSQL 16 and nightly backups.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/Uranury/tsis1Linux/internal/service"
+	"github.com/Uranury/oci-platform/internal/service"
 )
 
 type AuthHandler struct {

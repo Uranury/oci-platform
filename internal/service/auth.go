@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Uranury/tsis1Linux/internal/auth"
-	"github.com/Uranury/tsis1Linux/internal/models"
-	"github.com/Uranury/tsis1Linux/internal/repo"
-	"github.com/Uranury/tsis1Linux/pkg/dbutil"
+	"github.com/Uranury/oci-platform/internal/auth"
+	"github.com/Uranury/oci-platform/internal/models"
+	"github.com/Uranury/oci-platform/internal/repo"
+	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/google/uuid"
 )
 

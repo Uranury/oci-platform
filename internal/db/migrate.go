@@ -13,7 +13,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
-	"github.com/Uranury/tsis1Linux/migrations"
+	"github.com/Uranury/oci-platform/migrations"
 )
 
 // Migrate applies all pending "up" migrations against databaseURL. It is a

@@ -1,4 +1,4 @@
-module github.com/Uranury/tsis1Linux
+module github.com/Uranury/oci-platform
 
 go 1.26.0
 

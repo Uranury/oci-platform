@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/Uranury/tsis1Linux/internal/auth"
+	"github.com/Uranury/oci-platform/internal/auth"
 )
 
 func NewRouter(authH *AuthHandler, taskH *TaskHandler, jwtIssuer *auth.JWTIssuer) http.Handler {
