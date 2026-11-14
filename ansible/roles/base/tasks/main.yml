@@ -1,0 +1,45 @@
+---
+# Replaces the SIS #1 per-instance checklist and the rpcbind cleanup of SIS #3.
+- name: Refresh the apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: apt_online | bool
+
+- name: Upgrade installed packages
+  ansible.builtin.apt:
+    upgrade: safe
+  when: apt_online | bool and base_upgrade | bool
+
+- name: Set the hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Set the timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ncurses-term   # terminfo for modern terminal emulators
+      - acl            # setfacl, also needed by become_user on copied files
+      - nftables
+      - cron
+      - python3-apt
+    state: present
+
+# SIS #3: rpcbind listened on port 111 on all interfaces; nothing uses NFS.
+- name: Purge rpcbind and nfs-common
+  ansible.builtin.apt:
+    name:
+      - nfs-common
+      - rpcbind
+    state: absent
+    purge: true
+
+- name: Check the hostname
+  ansible.builtin.command: hostname
+  register: base_hostname
+  changed_when: false
+  failed_when: base_hostname.stdout != inventory_hostname

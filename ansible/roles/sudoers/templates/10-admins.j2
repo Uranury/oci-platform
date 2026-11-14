@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+# Administrators: full sudo. NOPASSWD because the accounts have no password
+# (the SSH key is the authentication).
+%{{ admin_group }} ALL=(ALL:ALL) NOPASSWD: ALL

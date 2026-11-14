@@ -1,0 +1,32 @@
+---
+# Replaces deploy/setup-fs.sh db.
+- name: Create the backup directory (postgres only)
+  ansible.builtin.file:
+    path: "{{ backup_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+
+- name: Install the backup script
+  ansible.builtin.template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/{{ app_name }}-backup.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Run the backup nightly as postgres
+  ansible.builtin.cron:
+    name: "{{ app_name }} nightly pg_dump"
+    cron_file: "{{ app_name }}-backup"
+    user: postgres
+    minute: "0"
+    hour: "{{ backup_hour }}"
+    job: /usr/local/bin/{{ app_name }}-backup.sh
+
+- name: Start cron and enable it at boot
+  ansible.builtin.systemd_service:
+    name: cron
+    state: started
+    enabled: true

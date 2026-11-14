@@ -1,0 +1,74 @@
+---
+# Single entry point: two plain Ubuntu 24.04 VMs -> the current state of
+# mainapp and main-db, then smoke tests.
+#
+#   first run:   ansible-playbook site.yml --ask-vault-pass -e bootstrap_user=ubuntu -e apt_online=true
+#   later runs:  ansible-playbook site.yml --ask-vault-pass
+#   tests only:  ansible-playbook site.yml --ask-vault-pass --tags verify
+#
+# Order matters:
+#   - main-db first, so PostgreSQL is ready when the API runs its migrations;
+#   - users -> sudoers -> ... -> acl last (a rewritten file loses its ACL);
+#   - ssh hardening only after the admin key works; firewall after ssh;
+#   - app before deploy_release; the bootstrap login is removed only from a
+#     session that is already logged in as the admin; verify last.
+
+- name: Database server
+  hosts: db
+  become: true
+  roles:
+    - { role: base, tags: [base] }
+    - { role: users, tags: [users] }
+    - { role: sudoers, tags: [sudoers] }
+    - { role: ssh, tags: [ssh] }
+    - { role: firewall, tags: [firewall] }
+    - { role: postgresql, tags: [postgresql] }
+    - { role: backup, tags: [backup] }
+    - { role: acl, tags: [acl] }
+
+- name: Application server
+  hosts: app
+  become: true
+  roles:
+    - { role: base, tags: [base] }
+    - { role: users, tags: [users] }
+    - { role: sudoers, tags: [sudoers] }
+    - { role: ssh, tags: [ssh] }
+    - { role: firewall, tags: [firewall] }
+    - { role: packages, tags: [packages] }
+    - { role: nginx, tags: [nginx] }
+    - { role: app, tags: [app] }
+    - { role: deploy_release, tags: [deploy] }
+    - { role: acl, tags: [acl] }
+
+- name: Remove the bootstrap login
+  hosts: app:db
+  become: true
+  vars:
+    connect_user: "{{ admin_user }}"
+    jump_user: "{{ admin_user }}"
+  roles:
+    - role: bootstrap_cleanup
+      when: remove_bootstrap_user | bool
+      tags: [bootstrap_cleanup]
+
+- name: Smoke tests on the servers
+  hosts: db:app
+  become: true
+  vars:
+    connect_user: "{{ admin_user }}"
+    jump_user: "{{ admin_user }}"
+  roles:
+    - { role: verify, tags: [verify] }
+
+- name: Smoke tests from the controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Run the external checks
+      ansible.builtin.import_role:
+        name: verify
+        tasks_from: external.yml
+      tags: [verify]

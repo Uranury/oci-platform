@@ -1,0 +1,34 @@
+---
+# Replaces deploy/setup-ssh.sh key / harden.
+- name: Authorize the administrator key
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ lookup('ansible.builtin.file', admin_pubkey_file) }}"
+    state: present
+
+# restrict: no port, agent or X11 forwarding. pty: an interactive session is
+# still possible, to demonstrate the login.
+- name: Authorize the deploy bot key (restricted)
+  ansible.posix.authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ lookup('ansible.builtin.file', deploy_pubkey_file) }}"
+    key_options: restrict,pty
+    state: present
+  when: "'app' in group_names"
+
+# Same safety rule as the script: never switch to key-only login before a
+# fresh login as the administrator has worked.
+- name: Log in as the administrator over a new SSH connection
+  ansible.builtin.ping:
+  become: false
+  vars:
+    connect_user: "{{ admin_user }}"
+
+- name: Harden sshd
+  ansible.builtin.include_tasks: dropin.yml
+
+- name: Log in as the administrator again after hardening
+  ansible.builtin.ping:
+  become: false
+  vars:
+    connect_user: "{{ admin_user }}"

@@ -1,0 +1,108 @@
+---
+- name: Read groups
+  ansible.builtin.getent:
+    database: group
+
+- name: Read accounts
+  ansible.builtin.getent:
+    database: passwd
+
+- name: "Groups: required groups exist"
+  ansible.builtin.assert:
+    that: item in ansible_facts.getent_group
+    fail_msg: "group {{ item }} is missing"
+    quiet: true
+  loop: "{{ [admin_group, auditor_group] + ([deploy_group] if 'app' in group_names else []) }}"
+
+- name: "Groups: memberships"
+  ansible.builtin.command: id -nG {{ item.user }}
+  register: verify_ids
+  changed_when: false
+  failed_when: item.group not in verify_ids.stdout.split()
+  loop: "{{ verify_memberships }}"
+  loop_control:
+    label: "{{ item.user }} in {{ item.group }}"
+  vars:
+    verify_memberships: >-
+      {{ [{'user': admin_user, 'group': admin_group},
+          {'user': auditor_user, 'group': auditor_group},
+          {'user': auditor_user, 'group': 'adm'},
+          {'user': auditor_user, 'group': 'systemd-journal'}]
+         + ([{'user': deploy_user, 'group': deploy_group}] if 'app' in group_names else []) }}
+
+- name: "Accounts: the bootstrap login is gone"
+  ansible.builtin.assert:
+    that: bootstrap_account not in ansible_facts.getent_passwd
+    fail_msg: "{{ bootstrap_account }} still exists"
+    quiet: true
+  when: remove_bootstrap_user | bool
+
+# sudo -n -l <cmd> asks whether the command is allowed without running it.
+- name: "Sudo: the admin has full sudo, the auditor has none"
+  ansible.builtin.command: runuser -u {{ item.user }} -- sudo -n -l {{ item.cmd }}
+  register: verify_sudo
+  changed_when: false
+  failed_when: (verify_sudo.rc == 0) != item.allowed
+  loop:
+    - { user: "{{ admin_user }}", cmd: /usr/bin/whoami, allowed: true }
+    - { user: "{{ auditor_user }}", cmd: "", allowed: false }
+  loop_control:
+    label: "{{ item.user }} {{ item.cmd | default('', true) or '(any)' }} -> {{ 'allowed' if item.allowed else 'refused' }}"
+
+- name: "SSH: read the effective sshd settings"
+  ansible.builtin.command: sshd -T
+  register: verify_sshd
+  changed_when: false
+
+- name: "SSH: key-only login, no root login"
+  ansible.builtin.assert:
+    that:
+      - "'passwordauthentication no' in verify_sshd.stdout_lines"
+      - "'kbdinteractiveauthentication no' in verify_sshd.stdout_lines"
+      - "'permitrootlogin no' in verify_sshd.stdout_lines"
+      - "'pubkeyauthentication yes' in verify_sshd.stdout_lines"
+    quiet: true
+
+- name: "SSH: the bootstrap group may not log in"
+  ansible.builtin.assert:
+    that: >-
+      verify_sshd.stdout_lines | select('match', '^allowgroups ') | first
+      | split(' ') | intersect([bootstrap_account]) | length == 0
+    quiet: true
+  when: remove_bootstrap_user | bool
+
+- name: "Firewall: the nft table is loaded"
+  ansible.builtin.command: nft list table inet {{ app_name }}
+  changed_when: false
+
+- name: "Firewall: no image REJECT rule left in iptables INPUT"
+  ansible.builtin.command: iptables -S INPUT
+  register: verify_iptables
+  changed_when: false
+  failed_when: "'REJECT' in verify_iptables.stdout"
+
+- name: "Firewall: nftables starts at boot"
+  ansible.builtin.command: systemctl is-enabled nftables  # noqa: command-instead-of-module
+  changed_when: false
+
+- name: "Firewall: netfilter-persistent does not start at boot"
+  ansible.builtin.command: systemctl is-enabled netfilter-persistent  # noqa: command-instead-of-module
+  register: verify_nfp
+  changed_when: false
+  failed_when: verify_nfp.stdout == 'enabled'
+
+- name: "Network: read listening TCP sockets"
+  ansible.builtin.command: ss -Htln
+  register: verify_ss
+  changed_when: false
+
+- name: "Network: nothing listens on port 111 (rpcbind removed)"
+  ansible.builtin.assert:
+    that: verify_ss.stdout_lines | select('search', ':111\s') | list | length == 0
+    quiet: true
+
+- name: "OS: timezone"
+  ansible.builtin.command: timedatectl show -p Timezone --value
+  register: verify_tz
+  changed_when: false
+  failed_when: verify_tz.stdout != timezone

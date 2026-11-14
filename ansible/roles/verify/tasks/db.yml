@@ -1,0 +1,95 @@
+---
+- name: "Accounts: no deploy bot on the database server"
+  ansible.builtin.assert:
+    that: deploy_user not in ansible_facts.getent_passwd
+    quiet: true
+
+- name: "Files: access as each account"
+  ansible.builtin.shell: |
+    test -e {{ item.path }} || exit 2
+    runuser -u {{ item.user }} -- test -{{ item.op }} {{ item.path }}
+  register: verify_access
+  changed_when: false
+  failed_when: verify_access.rc == 2 or ((verify_access.rc == 0) != item.allowed)
+  loop:
+    - { user: "{{ auditor_user }}", op: r, path: "{{ pg_conf_dir }}/pg_hba.conf", allowed: true }
+    - { user: "{{ auditor_user }}", op: r, path: "/etc/sudoers.d/10-admins", allowed: true }
+    - { user: "{{ auditor_user }}", op: r, path: "/var/log/postgresql/postgresql-{{ pg_version }}-main.log", allowed: true }
+    - { user: "{{ auditor_user }}", op: r, path: "{{ backup_dir }}", allowed: false }
+    - { user: "{{ auditor_user }}", op: r, path: "/var/lib/postgresql/{{ pg_version }}/main", allowed: false }
+  loop_control:
+    label: "{{ item.user }} {{ 'can' if item.allowed else 'can NOT' }} read {{ item.path }}"
+
+- name: "Files: backup directory"
+  ansible.builtin.stat:
+    path: "{{ backup_dir }}"
+  register: verify_backup_dir
+
+- name: "Files: backup directory is 700 postgres:postgres"
+  ansible.builtin.assert:
+    that:
+      - verify_backup_dir.stat.isdir
+      - verify_backup_dir.stat.mode == '0700'
+      - verify_backup_dir.stat.pw_name == 'postgres'
+      - verify_backup_dir.stat.gr_name == 'postgres'
+    quiet: true
+
+- name: "Files: backup script"
+  ansible.builtin.stat:
+    path: /usr/local/bin/{{ app_name }}-backup.sh
+  register: verify_backup_script
+
+- name: "Files: backup script is executable"
+  ansible.builtin.assert:
+    that: verify_backup_script.stat.executable
+    quiet: true
+
+- name: "Services: enabled at boot and running"
+  ansible.builtin.command: systemctl {{ item[1] }} {{ item[0] }}  # noqa: command-instead-of-module
+  changed_when: false
+  # postgresql@16-main is started by postgresql.service, so only is-active.
+  loop: "{{ ['postgresql', 'cron'] | product(['is-enabled', 'is-active']) | list + [['postgresql@' ~ pg_version ~ '-main', 'is-active']] }}"
+  loop_control:
+    label: "{{ item[0] }} {{ item[1] }}"
+
+- name: "Database: read listen_addresses and ssl"
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    query: SELECT current_setting('listen_addresses') AS listen, current_setting('ssl') AS ssl
+  become: true
+  become_user: postgres
+  register: verify_pg_settings
+
+- name: "Database: listens on localhost and the private address, TLS on"
+  ansible.builtin.assert:
+    that:
+      - verify_pg_settings.query_result[0].listen == pg_listen_addresses
+      - verify_pg_settings.query_result[0].ssl == 'on'
+    quiet: true
+
+- name: "Database: pg_hba allows the app role from the application server only"
+  ansible.builtin.command: grep -E '^host\s+{{ db_name }}\s+{{ db_user }}\s+{{ app_private_ip }}/32\s+scram-sha-256' {{ pg_conf_dir }}/pg_hba.conf
+  changed_when: false
+
+# SIS #1 restore test: dump, restore into a scratch database, list, drop.
+- name: "Backup: run the backup and restore it into a scratch database"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    /usr/local/bin/{{ app_name }}-backup.sh
+    dump=$(find {{ backup_dir }} -name '{{ db_name }}-*.dump' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2)
+    dropdb --if-exists {{ verify_restore_db }}
+    createdb {{ verify_restore_db }}
+    pg_restore --no-owner --dbname={{ verify_restore_db }} "$dump"
+    psql -d {{ verify_restore_db }} -Atc "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1"
+    dropdb {{ verify_restore_db }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: postgres
+  register: verify_restore
+  changed_when: false
+
+- name: "Backup: the restored copy has the application tables"
+  ansible.builtin.assert:
+    that: "['users', 'tasks', 'refresh_tokens'] | difference(verify_restore.stdout_lines) | length == 0"
+    success_msg: "restored tables: {{ verify_restore.stdout_lines | join(', ') }}"

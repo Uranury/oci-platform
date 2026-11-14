@@ -1,0 +1,100 @@
+---
+# Replaces deploy/setup-firewall.sh (app|db, then confirm).
+#
+# Lockout protection, same as the script:
+#   1. the ruleset is checked with nft -c before it is installed;
+#   2. before it is loaded, a systemd timer is armed that deletes the table
+#      after 3 minutes;
+#   3. Ansible drops its SSH connection and opens a NEW one (an open session
+#      proves nothing: established traffic is always accepted);
+#   4. only if that works is the timer cancelled and nftables enabled at boot.
+- name: Create /etc/nftables.d
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Load /etc/nftables.d/*.nft at boot
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: include "/etc/nftables.d/*.nft"
+    state: present
+
+- name: Install the ruleset (checked with nft -c first)
+  ansible.builtin.template:
+    src: tsis1linux.nft.j2
+    dest: /etc/nftables.d/{{ app_name }}.nft
+    owner: root
+    group: root
+    mode: "0644"
+    validate: nft -c -f %s
+  register: firewall_conf
+
+- name: Check whether the table is loaded
+  ansible.builtin.command: nft list table inet {{ app_name }}
+  register: firewall_table
+  changed_when: false
+  failed_when: false
+
+- name: Apply the ruleset behind a rollback timer
+  when: firewall_conf is changed or firewall_table.rc != 0
+  block:
+    - name: Arm the 3-minute rollback timer
+      ansible.builtin.command: >-
+        systemd-run --unit={{ app_name }}-fw-rollback --on-active=3m
+        /usr/sbin/nft delete table inet {{ app_name }}
+      changed_when: true
+
+    # The image's own rules (iptables-nft, ending in REJECT) live in a separate
+    # table. An accept in our table does not cancel a reject in theirs.
+    - name: Flush the image's iptables INPUT rules
+      ansible.builtin.iptables:
+        chain: INPUT
+        flush: true
+        ip_version: "{{ item }}"
+      loop: [ipv4, ipv6]
+
+    - name: Set the iptables INPUT policy to ACCEPT
+      ansible.builtin.iptables:
+        chain: INPUT
+        policy: ACCEPT
+        ip_version: "{{ item }}"
+      loop: [ipv4, ipv6]
+
+    - name: Load the ruleset
+      ansible.builtin.command: nft -f /etc/nftables.d/{{ app_name }}.nft
+      changed_when: true
+      register: firewall_applied
+
+- name: Drop the SSH connection so the next task needs a new one
+  ansible.builtin.meta: reset_connection
+
+- name: Open a new SSH connection through the new rules
+  ansible.builtin.wait_for_connection:
+    timeout: 60
+
+- name: Cancel the rollback timer (the new connection worked)
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}-fw-rollback.timer"
+    state: stopped
+  when: firewall_applied is not skipped
+
+- name: Read the installed services
+  ansible.builtin.service_facts:
+
+- name: Disable netfilter-persistent (the image's saved iptables rules)
+  ansible.builtin.systemd_service:
+    name: netfilter-persistent
+    enabled: false
+  when: "'netfilter-persistent.service' in ansible_facts.services"
+
+- name: Enable nftables at boot
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+
+- name: Check that the table is loaded
+  ansible.builtin.command: nft list table inet {{ app_name }}
+  changed_when: false

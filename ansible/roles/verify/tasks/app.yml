@@ -1,0 +1,108 @@
+---
+- name: "Accounts: the API service account has a nologin shell"
+  ansible.builtin.assert:
+    that: ansible_facts.getent_passwd[app_name][5] is search('nologin$')
+    quiet: true
+
+- name: "Sudo: the deploy bot may restart the API and nothing else"
+  ansible.builtin.command: runuser -u {{ deploy_user }} -- sudo -n -l {{ item.cmd }}
+  register: verify_deploy_sudo
+  changed_when: false
+  failed_when: (verify_deploy_sudo.rc == 0) != item.allowed
+  loop:
+    - { cmd: "/usr/bin/systemctl restart {{ app_name }}.service", allowed: true }
+    - { cmd: "/usr/bin/systemctl stop {{ app_name }}.service", allowed: false }
+    - { cmd: /usr/bin/systemctl restart nginx.service, allowed: false }
+    - { cmd: /usr/bin/whoami, allowed: false }
+  loop_control:
+    label: "{{ item.cmd }} -> {{ 'allowed' if item.allowed else 'refused' }}"
+
+# test -r / test -w as the account under test: no file content is ever read.
+# A missing path fails (rc 2), so "cannot read" never passes for the wrong reason.
+- name: "Files: access as each account"
+  ansible.builtin.shell: |
+    test -e {{ item.path }} || exit 2
+    runuser -u {{ item.user }} -- test -{{ item.op }} {{ item.path }}
+  register: verify_access
+  changed_when: false
+  failed_when: verify_access.rc == 2 or ((verify_access.rc == 0) != item.allowed)
+  loop:
+    - { user: "{{ auditor_user }}", op: r, path: /etc/sudoers.d/10-admins, allowed: true }
+    - { user: "{{ auditor_user }}", op: r, path: /var/log/nginx/access.log, allowed: true }
+    - { user: "{{ auditor_user }}", op: r, path: "{{ app_env_file }}", allowed: false }
+    - { user: "{{ auditor_user }}", op: w, path: /etc/nginx/nginx.conf, allowed: false }
+    - { user: "{{ deploy_user }}", op: w, path: "{{ app_dir }}/releases", allowed: true }
+    - { user: "{{ app_name }}", op: w, path: "{{ app_dir }}/releases", allowed: false }
+    - { user: "{{ app_name }}", op: r, path: "{{ app_env_file }}", allowed: false }
+  loop_control:
+    label: "{{ item.user }} {{ 'can' if item.allowed else 'can NOT' }} {{ 'read' if item.op == 'r' else 'write' }} {{ item.path }}"
+
+- name: "Files: read modes and owners"
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: verify_stat
+  loop:
+    - { path: "{{ app_env_file }}", mode: "0600", owner: root, group: root }
+    - { path: "/etc/{{ app_name }}", mode: "0750", owner: root, group: root }
+    - { path: "{{ app_dir }}/releases", mode: "0755", owner: "{{ deploy_user }}", group: "{{ deploy_group }}" }
+    - { path: "/home/{{ deploy_user }}/.ssh", mode: "0700", owner: "{{ deploy_user }}", group: "{{ deploy_group }}" }
+    - { path: "/home/{{ deploy_user }}/.ssh/authorized_keys", mode: "0600", owner: "{{ deploy_user }}", group: "{{ deploy_group }}" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: "Files: modes and owners are as expected"
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.mode == item.item.mode
+      - item.stat.pw_name == item.item.owner
+      - item.stat.gr_name == item.item.group
+    fail_msg: "{{ item.item.path }}: want {{ item.item.mode }} {{ item.item.owner }}:{{ item.item.group }}"
+    quiet: true
+  loop: "{{ verify_stat.results }}"
+  loop_control:
+    label: "{{ item.item.path }} {{ item.item.mode }} {{ item.item.owner }}:{{ item.item.group }}"
+
+- name: "SSH: the deploy key is restricted"
+  ansible.builtin.command: grep -c '^restrict,pty ' /home/{{ deploy_user }}/.ssh/authorized_keys
+  changed_when: false
+
+- name: "Services: enabled at boot and running"
+  ansible.builtin.command: systemctl {{ item[1] }} {{ item[0] }}  # noqa: command-instead-of-module
+  changed_when: false
+  loop: "{{ ['nginx', app_name] | product(['is-enabled', 'is-active']) | list }}"
+  loop_control:
+    label: "{{ item[0] }} {{ item[1] }}"
+
+- name: "Services: nginx configuration is valid"
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: "API: /healthz answers on loopback"
+  ansible.builtin.uri:
+    url: http://{{ app_listen_host }}:{{ app_port }}/healthz
+
+- name: "API: listens on loopback only (SIS #3)"
+  ansible.builtin.assert:
+    that:
+      - verify_ss.stdout_lines | select('search', '127\.0\.0\.1:' ~ app_port ~ '\s') | list | length == 1
+      - verify_ss.stdout_lines | select('search', '(\*|0\.0\.0\.0|\[::\]):' ~ app_port ~ '\s') | list | length == 0
+    quiet: true
+
+# SIS #1 check: the API machine reaches the database over TLS 1.3.
+- name: "Database: connect from mainapp as the app role with sslmode=require"
+  ansible.builtin.command: >-
+    psql "host={{ db_private_ip }} port=5432 dbname={{ db_name }} user={{ db_user }} sslmode=require"
+    -Atc "SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()"
+  environment:
+    PGPASSWORD: "{{ db_password }}"
+  become: false
+  register: verify_psql
+  changed_when: false
+  no_log: true
+
+- name: "Database: the connection uses TLS 1.3"
+  ansible.builtin.assert:
+    that: verify_psql.stdout == 'TLSv1.3'
+    success_msg: "{{ verify_psql.stdout }}"
+    fail_msg: "got '{{ verify_psql.stdout }}'"

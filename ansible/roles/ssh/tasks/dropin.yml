@@ -1,0 +1,27 @@
+---
+# Also included by bootstrap_cleanup, which re-renders the file once the
+# bootstrap group is gone.
+- name: Read the groups that exist on this machine
+  ansible.builtin.getent:
+    database: group
+
+# Only groups that exist are listed (deployers is absent on main-db, the
+# bootstrap group disappears with the bootstrap user).
+- name: Work out AllowGroups
+  ansible.builtin.set_fact:
+    ssh_allow_groups: >-
+      {{ [admin_group, deploy_group, auditor_group, bootstrap_account]
+         | select('in', ansible_facts.getent_group) | list }}
+
+- name: Install the sshd drop-in (checked with sshd -t before it goes live)
+  ansible.builtin.template:
+    src: 10-tsis1linux.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-tsis1linux.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: sshd -t -f %s
+  notify: Reload ssh
+
+- name: Apply the new sshd settings now
+  ansible.builtin.meta: flush_handlers

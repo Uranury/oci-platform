@@ -76,3 +76,29 @@ jobs:
           name: tsis1linux-${{ github.sha }}
           path: dist/tsis1linux
           if-no-files-found: error
+
+  ansible:
+    name: Ansible lint & syntax check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Ansible and ansible-lint
+        run: pip install ansible-core ansible-lint
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      # The vault is not decrypted in CI: neither step needs the secrets.
+      - name: Syntax check
+        run: ansible-playbook site.yml --syntax-check
+
+      - name: ansible-lint
+        run: ansible-lint site.yml

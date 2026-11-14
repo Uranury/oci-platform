@@ -1,0 +1,13 @@
+---
+# Both handlers listen to "reload nginx" and run in this order: a config that
+# fails nginx -t stops the play before the reload.
+- name: Test the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  listen: reload nginx
+
+- name: Reload nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  listen: reload nginx

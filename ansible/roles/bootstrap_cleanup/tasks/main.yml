@@ -1,0 +1,41 @@
+---
+# SIS #3, section 6: remove the cloud image's default login once the admin
+# account is proven. This play connects as the admin (site.yml sets
+# connect_user), so reaching the first task is that proof.
+- name: Confirm the admin login works
+  ansible.builtin.ping:
+
+- name: Remove the cloud-init sudo rule of the bootstrap user
+  ansible.builtin.file:
+    path: /etc/sudoers.d/90-cloud-init-users
+    state: absent
+
+- name: Look for the bootstrap user
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Remove the bootstrap user
+  when: bootstrap_account in ansible_facts.getent_passwd
+  block:
+    - name: End the bootstrap user's sessions
+      ansible.builtin.command: pkill -KILL -u {{ bootstrap_account }}
+      register: bootstrap_cleanup_pkill
+      changed_when: bootstrap_cleanup_pkill.rc == 0
+      failed_when: bootstrap_cleanup_pkill.rc > 1
+
+    - name: Delete the bootstrap user and its home
+      ansible.builtin.user:
+        name: "{{ bootstrap_account }}"
+        state: absent
+        remove: true
+        force: true
+
+- name: Delete the bootstrap group
+  ansible.builtin.group:
+    name: "{{ bootstrap_account }}"
+    state: absent
+
+- name: Drop the bootstrap group from AllowGroups
+  ansible.builtin.include_role:
+    name: ssh
+    tasks_from: dropin.yml

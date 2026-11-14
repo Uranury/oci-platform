@@ -1,0 +1,57 @@
+---
+# Replaces deploy/setup-users.sh. Accounts get no password (locked), so an SSH
+# key is the only way in.
+- name: Create the groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ [admin_group, auditor_group] + ([deploy_group] if 'app' in group_names else []) }}"
+
+- name: Create the administrator
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    group: "{{ admin_group }}"
+    comment: Administrator
+    shell: /bin/bash
+    create_home: true
+
+- name: Create the auditor (logs through adm and systemd-journal)
+  ansible.builtin.user:
+    name: "{{ auditor_user }}"
+    group: "{{ auditor_group }}"
+    groups: [adm, systemd-journal]
+    append: true
+    comment: Read-only auditor
+    shell: /bin/bash
+    create_home: true
+
+- name: Create the deploy bot
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    comment: Automation bot (CI deploy)
+    shell: /bin/bash
+    create_home: true
+  when: "'app' in group_names"
+
+- name: Create the API service group
+  ansible.builtin.group:
+    name: "{{ app_name }}"
+    system: true
+  when: "'app' in group_names"
+
+- name: Create the API service account (no login shell, no home)
+  ansible.builtin.user:
+    name: "{{ app_name }}"
+    group: "{{ app_name }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  when: "'app' in group_names"
+
+- name: Check that the deploy bot does not exist on the database server
+  ansible.builtin.command: id {{ deploy_user }}
+  register: users_deploy_on_db
+  changed_when: false
+  failed_when: users_deploy_on_db.rc == 0
+  when: "'db' in group_names"

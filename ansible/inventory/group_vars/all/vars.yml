@@ -1,0 +1,48 @@
+---
+# Accounts and groups (role table from SIS #2)
+admin_user: alibi
+auditor_user: auditor
+deploy_user: deploy
+admin_group: admins
+auditor_group: auditors
+deploy_group: deployers
+
+# The cloud image's own login. Used for the first run only, then removed
+# (SIS #3, section 6). Set remove_bootstrap_user: false to keep it as a
+# break-glass login, as in SIS #2.
+bootstrap_account: ubuntu
+remove_bootstrap_user: true
+
+# Application
+app_name: tsis1linux
+app_port: 8080
+app_listen_host: 127.0.0.1
+app_dir: /opt/{{ app_name }}
+app_env_file: /etc/{{ app_name }}/{{ app_name }}.env
+
+# Network: private IPs of the two VMs (were hard-coded in setup-firewall.sh
+# and setup-fs.sh)
+app_private_ip: 10.0.0.70
+db_private_ip: 10.0.0.113
+
+# Database
+db_name: appdb
+db_user: appuser
+pg_version: 16
+pg_conf_dir: /etc/postgresql/{{ pg_version }}/main
+
+# Secrets come from the vault (group_vars/all/vault.yml)
+db_password: "{{ vault_db_password }}"
+jwt_secret: "{{ vault_jwt_secret }}"
+
+# OS
+timezone: Etc/UTC
+# Whether the host can reach the Ubuntu archive. main-db cannot (no public IP),
+# so db.yml sets this to false. Pass -e apt_online=true while main-db has its
+# temporary public IP attached.
+apt_online: true
+base_upgrade: true
+
+# Private key of the deploy bot on the laptop. Only used by the controller-side
+# smoke test to prove the bot can log in; the check is skipped if it is missing.
+deploy_ssh_key: ~/.ssh/tsis1-deploy

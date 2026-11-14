@@ -1,0 +1,31 @@
+---
+# Replaces deploy/setup-sudoers.sh. visudo checks each file before it is moved
+# into /etc/sudoers.d, so a syntax error never reaches the live directory.
+- name: Install the administrators rule
+  ansible.builtin.template:
+    src: 10-admins.j2
+    dest: /etc/sudoers.d/10-admins
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: Install the deployers rule
+  ansible.builtin.template:
+    src: 20-deployers.j2
+    dest: /etc/sudoers.d/20-deployers
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+  when: "'app' in group_names"
+
+- name: No deployers rule on the database server
+  ansible.builtin.file:
+    path: /etc/sudoers.d/20-deployers
+    state: absent
+  when: "'app' not in group_names"
+
+- name: Check the whole sudo configuration
+  ansible.builtin.command: visudo -c
+  changed_when: false

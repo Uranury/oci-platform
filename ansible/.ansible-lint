@@ -1,0 +1,5 @@
+---
+# Lint the playbook, not build output or the encrypted vault.
+exclude_paths:
+  - .build/
+  - inventory/group_vars/all/vault.yml

@@ -1,0 +1,15 @@
+---
+admin_pubkey_file: keys/admin-mainapp.pub
+deploy_pubkey_file: keys/deploy.pub
+
+firewall_rules:
+  - tcp dport 22 accept
+  - tcp dport 80 accept   # add 443 when TLS is set up
+
+# packages role (SIS #3)
+pg_client_version: 17
+hurl_version: 8.0.1
+hurl_sha256: bc4732df4754748e9bf296aa3832ec019f798afb399f1279b72ed37b6e04525c
+
+# deploy_release role
+deploy_release_keep: 5

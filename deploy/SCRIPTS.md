@@ -1,5 +1,10 @@
 # oci-platform infrastructure scripts
 
+> **Superseded by Ansible (SIS #4).** The playbook in `ansible/` now does
+> everything these scripts did, starting from plain VMs; see `ansible/README.md`.
+> The scripts are kept for reference (each role names the script it replaces)
+> and are no longer run by hand.
+
 Scripts that set up users, permissions, SSH and the systemd service for the
 oci-platform todo API on two Ubuntu 24.04 machines (OCI, ARM64):
 

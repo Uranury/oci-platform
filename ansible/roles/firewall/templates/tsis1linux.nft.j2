@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# Declare, delete and redefine: loading this file twice replaces the table
+# instead of duplicating its rules, and leaves other tables alone.
+table inet {{ app_name }}
+delete table inet {{ app_name }}
+table inet {{ app_name }} {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		ct state established,related accept
+		ct state invalid drop
+		iifname "lo" accept
+		ip protocol icmp accept
+		ip6 nexthdr icmpv6 accept
+{% for rule in firewall_rules %}
+		{{ rule }}
+{% endfor %}
+	}
+}

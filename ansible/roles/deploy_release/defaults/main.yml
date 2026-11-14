@@ -1,0 +1,13 @@
+---
+# Where the binary comes from:
+#   - deploy_release_binary empty (default): build it on the controller with
+#     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 from the repository root;
+#   - deploy_release_binary set: use that file, e.g. the CI artifact fetched with
+#     gh run download <run-id> -n tsis1linux-<sha> -D /tmp/rel
+deploy_release_binary: ""
+# Release directory name. Default: git describe --always --dirty
+deploy_release_version: ""
+deploy_release_source_dir: "{{ playbook_dir }}/.."
+deploy_release_build_dir: "{{ playbook_dir }}/.build"
+deploy_release_keep: 5
+deploy_release_prune: true

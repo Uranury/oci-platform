@@ -1,0 +1,14 @@
+---
+admin_pubkey_file: keys/admin-main-db.pub
+
+# No outbound route by design. Override with -e apt_online=true while a
+# temporary public IP is attached (first run).
+apt_online: false
+
+firewall_rules:
+  - "ip saddr {{ app_private_ip }} tcp dport { 22, 5432 } accept"
+
+pg_listen_addresses: "localhost, {{ db_private_ip }}"
+backup_dir: /var/backups/tsis1linux
+backup_hour: 3
+backup_keep_days: 7

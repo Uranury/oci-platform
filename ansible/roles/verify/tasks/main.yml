@@ -1,0 +1,15 @@
+---
+# Smoke tests: port of deploy/verify.sh (33 checks on mainapp, 20 on main-db)
+# plus the SIS #1 database checks. Every task fails the play on a wrong state
+# and none of them changes anything, so they are safe on a live system:
+#   ansible-playbook site.yml --tags verify --ask-vault-pass
+- name: Checks for both machines
+  ansible.builtin.import_tasks: common.yml
+
+- name: Checks for the application server
+  ansible.builtin.import_tasks: app.yml
+  when: "'app' in group_names"
+
+- name: Checks for the database server
+  ansible.builtin.import_tasks: db.yml
+  when: "'db' in group_names"

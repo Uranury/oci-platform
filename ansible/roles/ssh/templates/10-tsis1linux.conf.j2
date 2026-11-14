@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Named 10-* so it sorts before 50-cloud-init.conf: sshd keeps the FIRST value
+# it reads for each setting.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+AllowGroups {{ ssh_allow_groups | join(' ') }}

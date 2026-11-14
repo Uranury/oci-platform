@@ -1,0 +1,74 @@
+---
+# Replaces deploy/setup-fs.sh app and deploy/enable-service.sh.
+- name: Create the release directories (owned by the deploy bot)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/releases"
+
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: /etc/{{ app_name }}
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# Secrets come from the vault. Unlike setup-fs.sh, the file is enforced on
+# every run: the vault, not a hand edit on the server, is the source of truth.
+- name: Install the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart the API
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: service.j2
+    dest: /etc/systemd/system/{{ app_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart the API
+
+- name: Look for an installed release
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/current/{{ app_name }}"
+  register: app_binary
+
+- name: Run pending handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the API at boot
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}"
+    enabled: true
+
+# On a fresh VM there is no release yet; deploy_release installs one and
+# starts the service.
+- name: Start the API
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}"
+    state: started
+  when: app_binary.stat.exists
+
+# The API runs migrations against main-db on start, so give it a moment.
+- name: Wait for /healthz
+  ansible.builtin.uri:
+    url: http://{{ app_listen_host }}:{{ app_port }}/healthz
+  register: app_health
+  until: app_health.status == 200
+  retries: 15
+  delay: 1
+  when: app_binary.stat.exists

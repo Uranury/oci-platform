@@ -1,0 +1,85 @@
+---
+# Replaces deploy/setup-packages.sh (SIS #3): one package from each source.
+- name: Check the architecture (the hurl tarball is aarch64)
+  ansible.builtin.assert:
+    that: ansible_facts.architecture == 'aarch64'
+    fail_msg: "expected aarch64, got {{ ansible_facts.architecture }}"
+    quiet: true
+
+# 1. Default repository
+- name: Install tools from the Ubuntu archive
+  ansible.builtin.apt:
+    name: [jq, netcat-openbsd, curl, ca-certificates, libxml2]
+    state: present
+
+# 2. Added repository (PGDG), key trusted for this one source only
+- name: Create /etc/apt/keyrings
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download the PGDG signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /etc/apt/keyrings/pgdg.asc
+    mode: "0644"
+
+- name: Install python3-debian (needed by deb822_repository)
+  ansible.builtin.apt:
+    name: python3-debian
+    state: present
+
+# The SIS #3 script wrote a one-line pgdg.list; deb822 .sources replaces it.
+- name: Remove the old one-line PGDG source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/pgdg.list
+    state: absent
+
+- name: Add the PGDG repository
+  ansible.builtin.deb822_repository:
+    name: pgdg
+    types: deb
+    uris: https://apt.postgresql.org/pub/repos/apt
+    suites: "{{ ansible_facts.distribution_release }}-pgdg"
+    components: main
+    signed_by: /etc/apt/keyrings/pgdg.asc
+  register: packages_pgdg
+
+- name: Install the PostgreSQL client from PGDG
+  ansible.builtin.apt:
+    name: postgresql-client-{{ pg_client_version }}
+    state: present
+    update_cache: "{{ packages_pgdg is changed }}"
+
+# 3. Outside the package manager: pinned, checksum-verified release tarball
+- name: Download hurl (verified against the pinned SHA-256)
+  ansible.builtin.get_url:
+    url: "https://github.com/Orange-OpenSource/hurl/releases/download/{{ hurl_version }}/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu.tar.gz"
+    dest: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
+    checksum: sha256:{{ hurl_sha256 }}
+    mode: "0644"
+
+- name: Unpack hurl
+  ansible.builtin.unarchive:
+    src: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
+    dest: /usr/local/src
+    remote_src: true
+    creates: /usr/local/src/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu/bin/hurl
+
+- name: Install the hurl binary
+  ansible.builtin.copy:
+    src: /usr/local/src/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu/bin/hurl
+    dest: /usr/local/bin/hurl
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check that the tools run
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - jq --version
+    - psql --version
+    - hurl --version
+  changed_when: false

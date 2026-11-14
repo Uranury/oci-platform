@@ -1,0 +1,53 @@
+---
+# Replaces deploy/setup-perms.sh. Must run AFTER sudoers and postgresql:
+# a file that Ansible rewrites is replaced by a new inode and loses its ACL.
+- name: Auditors can read /etc/sudoers
+  ansible.posix.acl:
+    path: /etc/sudoers
+    entity: "{{ auditor_group }}"
+    etype: group
+    permissions: r
+    state: present
+
+- name: Auditors can list /etc/sudoers.d
+  ansible.posix.acl:
+    path: /etc/sudoers.d
+    entity: "{{ auditor_group }}"
+    etype: group
+    permissions: rx
+    state: present
+
+- name: Find the sudo rule files
+  ansible.builtin.find:
+    paths: /etc/sudoers.d
+    file_type: file
+  register: acl_sudoers_files
+
+- name: Auditors can read every sudo rule file
+  ansible.posix.acl:
+    path: "{{ item.path }}"
+    entity: "{{ auditor_group }}"
+    etype: group
+    permissions: r
+    state: present
+  loop: "{{ acl_sudoers_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Auditors can enter the PostgreSQL config directory
+  ansible.posix.acl:
+    path: "{{ pg_conf_dir }}"
+    entity: "{{ auditor_group }}"
+    etype: group
+    permissions: rx
+    state: present
+  when: "'db' in group_names"
+
+- name: Auditors can read pg_hba.conf
+  ansible.posix.acl:
+    path: "{{ pg_conf_dir }}/pg_hba.conf"
+    entity: "{{ auditor_group }}"
+    etype: group
+    permissions: r
+    state: present
+  when: "'db' in group_names"

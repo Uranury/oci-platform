@@ -1,0 +1,3 @@
+# {{ ansible_managed }}
+# Automation bot: restart the API, nothing else. Exact command, no wildcards.
+%{{ deploy_group }} ALL=(root) NOPASSWD: /usr/bin/systemctl restart {{ app_name }}.service

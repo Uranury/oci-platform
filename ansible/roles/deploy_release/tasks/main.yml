@@ -1,0 +1,121 @@
+---
+# Replaces local/scripts/push-release.sh and activate-release.sh.
+- name: Work out the release version
+  ansible.builtin.command: git describe --always --dirty  # noqa: command-instead-of-module
+  args:
+    chdir: "{{ deploy_release_source_dir }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: deploy_release_git
+  when: deploy_release_version | length == 0
+
+- name: Set release facts
+  ansible.builtin.set_fact:
+    deploy_release_id: "{{ deploy_release_version if deploy_release_version | length > 0 else deploy_release_git.stdout }}"
+    deploy_release_src: "{{ deploy_release_binary if deploy_release_binary | length > 0 else deploy_release_build_dir ~ '/' ~ app_name }}"
+
+# Deterministic with -trimpath: the same commit gives the same bytes, so the
+# copy below stays unchanged on a second run.
+- name: Build the linux/arm64 binary on the controller
+  ansible.builtin.command:
+    argv: [go, build, -trimpath, "-ldflags=-s -w", -o, "{{ deploy_release_build_dir }}/{{ app_name }}", ./cmd/app]
+    chdir: "{{ deploy_release_source_dir }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: arm64
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  when: deploy_release_binary | length == 0
+
+- name: Remember the live release
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/current"
+  register: deploy_release_current
+
+# Everything below runs as the deploy bot, like the scripts did over ssh app-deploy.
+- name: Create the release directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}/releases/{{ deploy_release_id }}"
+    state: directory
+    mode: "0755"
+  become: true
+  become_user: "{{ deploy_user }}"
+
+- name: Upload the binary
+  ansible.builtin.copy:
+    src: "{{ deploy_release_src }}"
+    dest: "{{ app_dir }}/releases/{{ deploy_release_id }}/{{ app_name }}"
+    mode: "0755"
+  become: true
+  become_user: "{{ deploy_user }}"
+  notify: Restart the API for the new release
+
+- name: Activate the release and check it
+  block:
+    - name: Point current at the release
+      ansible.builtin.file:
+        src: "{{ app_dir }}/releases/{{ deploy_release_id }}"
+        dest: "{{ app_dir }}/current"
+        state: link
+        force: true
+      become: true
+      become_user: "{{ deploy_user }}"
+      notify: Restart the API for the new release
+
+    - name: Restart the API now
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for /healthz
+      ansible.builtin.uri:
+        url: http://{{ app_listen_host }}:{{ app_port }}/healthz
+      register: deploy_release_health
+      until: deploy_release_health.status == 200
+      retries: 15
+      delay: 1
+
+  rescue:
+    - name: Roll the symlink back to the previous release
+      ansible.builtin.file:
+        src: "{{ deploy_release_current.stat.lnk_source }}"
+        dest: "{{ app_dir }}/current"
+        state: link
+        force: true
+      become: true
+      become_user: "{{ deploy_user }}"
+      when: deploy_release_current.stat.islnk | default(false)
+
+    - name: Restart the previous release
+      ansible.builtin.systemd_service:
+        name: "{{ app_name }}"
+        state: restarted
+      when: deploy_release_current.stat.islnk | default(false)
+
+    - name: Fail the deployment
+      ansible.builtin.fail:
+        msg: >-
+          release {{ deploy_release_id }} did not answer /healthz;
+          rolled back to {{ deploy_release_current.stat.lnk_source | default('nothing') }}
+
+- name: List releases
+  ansible.builtin.find:
+    paths: "{{ app_dir }}/releases"
+    file_type: directory
+  register: deploy_release_all
+  when: deploy_release_prune | bool
+
+# Keep the newest deploy_release_keep directories; never delete the live one.
+- name: Delete old releases (keep the newest deploy_release_keep)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  become_user: "{{ deploy_user }}"
+  loop: >-
+    {{ (deploy_release_all.files | sort(attribute='mtime') | map(attribute='path') | list)[:-(deploy_release_keep | int)]
+       | reject('equalto', app_dir ~ '/releases/' ~ deploy_release_id) | list }}
+  when: deploy_release_prune | bool

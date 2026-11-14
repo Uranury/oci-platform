@@ -1,0 +1,38 @@
+---
+# Replaces the manual nginx install (SIS #1) and the site from setup-fs.sh app.
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Install the site
+  ansible.builtin.template:
+    src: site.j2
+    dest: /etc/nginx/sites-available/{{ app_name }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable the site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/{{ app_name }}
+    dest: /etc/nginx/sites-enabled/{{ app_name }}
+    state: link
+  notify: reload nginx
+
+- name: Disable the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Start nginx and enable it at boot
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Check the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+set -euo pipefail
+DIR={{ backup_dir }}
+pg_dump --format=custom --file="$DIR/{{ db_name }}-$(date +%F).dump" {{ db_name }}
+find "$DIR" -name '{{ db_name }}-*.dump' -mtime +{{ backup_keep_days }} -delete

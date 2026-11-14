@@ -1,0 +1,125 @@
+---
+# Runs on the controller (the laptop): closed-port checks only prove something
+# from outside. Port of local/scripts/smoke.sh.
+- name: Set the target address
+  ansible.builtin.set_fact:
+    verify_ip: "{{ hostvars[groups['app'][0]].ansible_host }}"
+    verify_base: "http://{{ hostvars[groups['app'][0]].ansible_host }}"
+    verify_email: "smoke-{{ now(utc=true).strftime('%Y%m%d%H%M%S') }}-{{ 100000 | random }}@example.com"
+    verify_username: "smoke-{{ 100000 | random }}"
+    verify_password: "Smoke-{{ 100000 | random }}-test"
+
+- name: "Ports: open from the internet"
+  ansible.builtin.wait_for:
+    host: "{{ verify_ip }}"
+    port: "{{ item }}"
+    state: started
+    timeout: 10
+  loop: [22, 80]
+
+- name: "Ports: closed from the internet (nothing answers)"
+  ansible.builtin.wait_for:
+    host: "{{ verify_ip }}"
+    port: "{{ item }}"
+    state: stopped
+    connect_timeout: 3
+    timeout: 15
+  loop: [443, 8080, 5432]
+
+# The server must offer publickey and nothing else.
+- name: "SSH: password login is refused"
+  ansible.builtin.command: >-
+    ssh -o BatchMode=yes -o ConnectTimeout=5 -o PubkeyAuthentication=no
+    -o PreferredAuthentications=password,keyboard-interactive
+    -o StrictHostKeyChecking=accept-new nobody@{{ verify_ip }} true
+  register: verify_pwlogin
+  changed_when: false
+  failed_when: verify_pwlogin.stderr is not search('Permission denied \(publickey\)')
+
+- name: "SSH: look for the deploy bot key on this laptop"
+  ansible.builtin.stat:
+    path: "{{ deploy_ssh_key | expanduser }}"
+  register: verify_deploy_key
+
+- name: "SSH: the deploy bot logs in with its key, can write releases, has no sudo"
+  ansible.builtin.command: >-
+    ssh -o BatchMode=yes -o ConnectTimeout=5 -o IdentitiesOnly=yes
+    -i {{ deploy_ssh_key | expanduser }} {{ deploy_user }}@{{ verify_ip }}
+    'test -w {{ app_dir }}/releases && ! sudo -n true 2>/dev/null'
+  changed_when: false
+  when: verify_deploy_key.stat.exists
+
+- name: "API: GET /healthz through nginx"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/healthz"
+
+- name: "API: register"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/auth/register"
+    method: POST
+    body_format: json
+    body: { username: "{{ verify_username }}", email: "{{ verify_email }}", password: "{{ verify_password }}" }
+    status_code: 201
+
+- name: "API: login"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/auth/login"
+    method: POST
+    body_format: json
+    body: { email: "{{ verify_email }}", password: "{{ verify_password }}" }
+  register: verify_login
+  no_log: true
+
+- name: "API: login returns both tokens"
+  ansible.builtin.assert:
+    that:
+      - verify_login.json.access_token | default('') | length > 0
+      - verify_login.json.refresh_token | default('') | length > 0
+    quiet: true
+
+- name: "API: GET /tasks without a token is 401"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/tasks"
+    status_code: 401
+
+- name: "API: create a task"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/tasks"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    body_format: json
+    body: { title: "{{ verify_task_title }}" }
+    status_code: 201
+  no_log: true
+
+- name: "API: list tasks"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/tasks"
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+  register: verify_tasks
+  no_log: true
+
+- name: "API: the list shows the new task"
+  ansible.builtin.assert:
+    that: verify_task_title in (verify_tasks.json | map(attribute='title') | list)
+    quiet: true
+
+- name: "API: logout"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/auth/logout"
+    method: POST
+    body_format: json
+    body: { refresh_token: "{{ verify_login.json.refresh_token }}" }
+    status_code: [200, 204]
+  no_log: true
+
+- name: "API: the revoked refresh token is rejected"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/auth/refresh"
+    method: POST
+    body_format: json
+    body: { refresh_token: "{{ verify_login.json.refresh_token }}" }
+    status_code: 401
+  no_log: true

@@ -1,0 +1,11 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+# Nothing to restart before the first release is installed.
+- name: Restart the API
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}"
+    state: restarted
+  when: app_binary.stat.exists

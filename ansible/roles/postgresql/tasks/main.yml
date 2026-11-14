@@ -1,0 +1,68 @@
+---
+# Replaces the manual steps of the SIS #1 report, section 3.5.
+- name: Install PostgreSQL and the Python driver Ansible needs
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - python3-psycopg2
+    state: present
+
+- name: Listen on localhost and the private address only
+  ansible.builtin.lineinfile:
+    path: "{{ pg_conf_dir }}/postgresql.conf"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '{{ pg_listen_addresses }}'"
+  notify: Restart postgresql
+
+# The package's snakeoil certificate is what gives sslmode=require its TLS 1.3.
+- name: Keep TLS on
+  ansible.builtin.lineinfile:
+    path: "{{ pg_conf_dir }}/postgresql.conf"
+    regexp: '^#?ssl\s*='
+    line: ssl = on
+  notify: Restart postgresql
+
+# lineinfile rather than postgresql_pg_hba: it appends one line and leaves the
+# package's rules, their order and their comments untouched.
+- name: Let appuser reach appdb from the application server only
+  ansible.builtin.lineinfile:
+    path: "{{ pg_conf_dir }}/pg_hba.conf"
+    regexp: '^host\s+{{ db_name }}\s+{{ db_user }}\s'
+    line: host {{ db_name }} {{ db_user }} {{ app_private_ip }}/32 scram-sha-256
+  notify: Reload postgresql
+
+- name: Start PostgreSQL and enable it at boot
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Apply configuration changes before creating the role
+  ansible.builtin.meta: flush_handlers
+
+- name: Create the application role
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    role_attr_flags: LOGIN
+    login_db: postgres
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Create the application database
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    owner: "{{ db_user }}"
+    login_db: postgres
+  become: true
+  become_user: postgres
+
+- name: Check listen_addresses
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    query: SHOW listen_addresses
+  become: true
+  become_user: postgres
+  register: postgresql_listen
+  failed_when: postgresql_listen.query_result[0].listen_addresses != pg_listen_addresses
