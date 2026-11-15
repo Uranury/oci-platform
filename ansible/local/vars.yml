@@ -1,0 +1,9 @@
+---
+# Overrides for a local dry run on two Multipass VMs:
+#   ansible-playbook site.yml -e @local/vars.yml -e bootstrap_user=ubuntu --vault-password-file .vault_pass
+# Fill in the addresses from `multipass list`. In Multipass the VMs share one
+# network, so each VM's "private" address is also the one the laptop reaches.
+app_public_ip: 192.168.64.X    # mainapp
+app_private_ip: 192.168.64.X   # mainapp (same address)
+db_private_ip: 192.168.64.Y    # main-db
+apt_online: true               # local main-db has internet

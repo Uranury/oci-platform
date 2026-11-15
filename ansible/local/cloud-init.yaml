@@ -1,0 +1,6 @@
+#cloud-config
+# Local test VMs (Multipass). Gives the default "ubuntu" user the same keys the
+# OCI VMs use, so the playbook's first run (-e bootstrap_user=ubuntu) works as-is.
+ssh_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJA4fPn1Nlmuqy5MV89fY8Q8yHaqRQWDT2YUkuJgqWIS mac-key
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtg5E/pjCyPML6KNMM7DqDm04MazyTXecnfE3KlpKB5PY8Jj2TR2KqXba54FOObLQvIw7xOA9Qh4/Moe66+xb2F/65TebM0lMJTwXSJZ2B+6Ep89sYI/t9oNz4lgDqsQIOmBUUcKZ4GRIeuvC+EOERGeUDOM1kzNyf1ZbS4j8CjZ7XPcm5nweqWZ+33j4CbYTqy1E5GG6zCjD58hg4tcaMDX6pfdaTbnpKf0Lc/21E0QWypIFHcRfVRynjaW//9fU3uXuqYmMndzYkKQWp0fewPF+NFtzaQDopEJLTMaz0hcbjY+nP/Qkf6tKiqP7ZCA6pX6KIg1uKueRNtM7/e3BF ssh-key-2026-09-20
