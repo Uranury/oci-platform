@@ -50,6 +50,8 @@
 #    (skipped when hurl_from_archive: the archive's hurl is installed above)
 - name: Install hurl from the release tarball
   when: not hurl_from_archive | bool
+  vars:
+    packages_hurl_name: hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu
   block:
     - name: Check the architecture (hurl is pinned per architecture)
       ansible.builtin.assert:
@@ -59,7 +61,7 @@
 
     - name: Download hurl (verified against the pinned SHA-256)
       ansible.builtin.get_url:
-        url: "https://github.com/Orange-OpenSource/hurl/releases/download/{{ hurl_version }}/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu.tar.gz"
+        url: "https://github.com/Orange-OpenSource/hurl/releases/download/{{ hurl_version }}/{{ packages_hurl_name }}.tar.gz"
         dest: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
         checksum: sha256:{{ hurl_sha256[ansible_facts.architecture] }}
         mode: "0644"
@@ -69,11 +71,11 @@
         src: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
         dest: /usr/local/src
         remote_src: true
-        creates: /usr/local/src/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu/bin/hurl
+        creates: /usr/local/src/{{ packages_hurl_name }}/bin/hurl
 
     - name: Install the hurl binary
       ansible.builtin.copy:
-        src: /usr/local/src/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu/bin/hurl
+        src: /usr/local/src/{{ packages_hurl_name }}/bin/hurl
         dest: /usr/local/bin/hurl
         remote_src: true
         owner: root
