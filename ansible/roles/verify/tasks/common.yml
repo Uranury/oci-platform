@@ -49,6 +49,17 @@
   loop_control:
     label: "{{ item.user }} {{ item.cmd | default('', true) or '(any)' }} -> {{ 'allowed' if item.allowed else 'refused' }}"
 
+# sshd -T needs /run/sshd, which only exists while ssh.service runs (Ubuntu
+# 24.04 starts it from ssh.socket). See roles/ssh/tasks/dropin.yml.
+- name: "SSH: make sure /run/sshd exists for sshd -T"
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  changed_when: false
+
 - name: "SSH: read the effective sshd settings"
   ansible.builtin.command: sshd -T
   register: verify_sshd

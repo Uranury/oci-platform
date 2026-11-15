@@ -13,6 +13,20 @@
       {{ [admin_group, deploy_group, auditor_group, bootstrap_account]
          | select('in', ansible_facts.getent_group) | list }}
 
+# sshd -t refuses to run without /run/sshd. On Ubuntu 24.04 sshd is
+# socket-activated and the directory only exists while ssh.service is running
+# (RuntimeDirectory), so it is missing when only ssh.socket is active, e.g.
+# right after an openssh-server upgrade. It is a runtime directory, not
+# configuration, so creating it is not reported as a change.
+- name: Make sure the privilege separation directory exists for sshd -t
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  changed_when: false
+
 - name: Install the sshd drop-in (checked with sshd -t before it goes live)
   ansible.builtin.template:
     src: 10-tsis1linux.conf.j2

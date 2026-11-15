@@ -54,7 +54,8 @@
   community.postgresql.postgresql_db:
     name: "{{ db_name }}"
     owner: "{{ db_user }}"
-    login_db: postgres
+    # postgresql_db calls this maintenance_db; the other modules use login_db.
+    maintenance_db: postgres
   become: true
   become_user: postgres
 
