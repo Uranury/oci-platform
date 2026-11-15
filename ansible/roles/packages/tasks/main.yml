@@ -1,15 +1,9 @@
 ---
 # Replaces deploy/setup-packages.sh (SIS #3): one package from each source.
-- name: Check the architecture (the hurl tarball is aarch64)
-  ansible.builtin.assert:
-    that: ansible_facts.architecture == 'aarch64'
-    fail_msg: "expected aarch64, got {{ ansible_facts.architecture }}"
-    quiet: true
-
 # 1. Default repository
 - name: Install tools from the Ubuntu archive
   ansible.builtin.apt:
-    name: [jq, netcat-openbsd, curl, ca-certificates, libxml2]
+    name: "{{ ['jq', 'netcat-openbsd', 'curl', 'ca-certificates'] + (['hurl'] if hurl_from_archive | bool else ['libxml2']) }}"
     state: present
 
 # 2. Added repository (PGDG), key trusted for this one source only
@@ -53,28 +47,38 @@
     update_cache: "{{ packages_pgdg is changed }}"
 
 # 3. Outside the package manager: pinned, checksum-verified release tarball
-- name: Download hurl (verified against the pinned SHA-256)
-  ansible.builtin.get_url:
-    url: "https://github.com/Orange-OpenSource/hurl/releases/download/{{ hurl_version }}/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu.tar.gz"
-    dest: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
-    checksum: sha256:{{ hurl_sha256 }}
-    mode: "0644"
+#    (skipped when hurl_from_archive: the archive's hurl is installed above)
+- name: Install hurl from the release tarball
+  when: not hurl_from_archive | bool
+  block:
+    - name: Check the architecture (hurl is pinned per architecture)
+      ansible.builtin.assert:
+        that: ansible_facts.architecture in hurl_sha256
+        fail_msg: "no pinned hurl checksum for {{ ansible_facts.architecture }}"
+        quiet: true
 
-- name: Unpack hurl
-  ansible.builtin.unarchive:
-    src: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
-    dest: /usr/local/src
-    remote_src: true
-    creates: /usr/local/src/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu/bin/hurl
+    - name: Download hurl (verified against the pinned SHA-256)
+      ansible.builtin.get_url:
+        url: "https://github.com/Orange-OpenSource/hurl/releases/download/{{ hurl_version }}/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu.tar.gz"
+        dest: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
+        checksum: sha256:{{ hurl_sha256[ansible_facts.architecture] }}
+        mode: "0644"
 
-- name: Install the hurl binary
-  ansible.builtin.copy:
-    src: /usr/local/src/hurl-{{ hurl_version }}-aarch64-unknown-linux-gnu/bin/hurl
-    dest: /usr/local/bin/hurl
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0755"
+    - name: Unpack hurl
+      ansible.builtin.unarchive:
+        src: /usr/local/src/hurl-{{ hurl_version }}.tar.gz
+        dest: /usr/local/src
+        remote_src: true
+        creates: /usr/local/src/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu/bin/hurl
+
+    - name: Install the hurl binary
+      ansible.builtin.copy:
+        src: /usr/local/src/hurl-{{ hurl_version }}-{{ ansible_facts.architecture }}-unknown-linux-gnu/bin/hurl
+        dest: /usr/local/bin/hurl
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
 
 - name: Check that the tools run
   ansible.builtin.command: "{{ item }}"

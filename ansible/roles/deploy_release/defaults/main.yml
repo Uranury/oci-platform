@@ -1,7 +1,7 @@
 ---
 # Where the binary comes from:
 #   - deploy_release_binary empty (default): build it on the controller with
-#     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 from the repository root;
+#     CGO_ENABLED=0 GOOS=linux GOARCH=<deploy_release_goarch> from the repository root;
 #   - deploy_release_binary set: use that file, e.g. the CI artifact fetched with
 #     gh run download <run-id> -n tsis1linux-<sha> -D /tmp/rel
 deploy_release_binary: ""
@@ -11,3 +11,6 @@ deploy_release_source_dir: "{{ playbook_dir }}/.."
 deploy_release_build_dir: "{{ playbook_dir }}/.build"
 deploy_release_keep: 5
 deploy_release_prune: true
+# Go architecture of the build. Default: from the first target's facts
+# (aarch64 -> arm64 on OCI, x86_64 -> amd64 on a local VM).
+deploy_release_goarch: "{{ {'aarch64': 'arm64', 'x86_64': 'amd64'}[ansible_facts.architecture] }}"

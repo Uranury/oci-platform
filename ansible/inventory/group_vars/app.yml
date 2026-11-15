@@ -9,7 +9,12 @@ firewall_rules:
 # packages role (SIS #3)
 pg_client_version: 17
 hurl_version: 8.0.1
-hurl_sha256: bc4732df4754748e9bf296aa3832ec019f798afb399f1279b72ed37b6e04525c
+hurl_sha256:   # per ansible_facts.architecture
+  aarch64: bc4732df4754748e9bf296aa3832ec019f798afb399f1279b72ed37b6e04525c
+  x86_64: cac7c4670d69444db120edb21fe06c97ba8c80dcc52279957c8dd18f05fb0c06
+# The upstream hurl binaries link libxml2.so.2, which Ubuntu 26.04 no longer
+# ships (libxml2.so.16). true: install the distro's hurl package instead.
+hurl_from_archive: false
 
 # deploy_release role
 deploy_release_keep: 5

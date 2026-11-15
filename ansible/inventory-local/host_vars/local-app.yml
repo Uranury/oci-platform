@@ -1,0 +1,22 @@
+# Lab overrides for the local VM.
+
+# The control node's key (~/.ssh/ansKeys), so alibi is reachable from here.
+admin_pubkey_file: keys/admin-local-vm.pub
+
+# The VM's own first login is alee, not ubuntu. Naming it here keeps alee in
+# sshd AllowGroups, so the bootstrap login still works after hardening.
+bootstrap_account: alee
+# Keep alee: it is the VM owner's account, not a cloud image login.
+remove_bootstrap_user: false
+
+# Throwaway secrets instead of the vault (nothing real runs here).
+db_password: lab-only-db-password
+jwt_secret: lab-only-jwt-secret-0123456789abcdef
+
+# Ubuntu 26.04 defaults to sudo-rs, whose password prompt ansible-core 2.16
+# does not recognise (timeout waiting for the privilege escalation prompt).
+# The classic sudo ships alongside it as sudo.ws.
+ansible_become_exe: /usr/bin/sudo.ws
+
+# hurl: the upstream tarball needs libxml2.so.2, absent on Ubuntu 26.04.
+hurl_from_archive: true

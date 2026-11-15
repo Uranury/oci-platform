@@ -18,14 +18,14 @@
 
 # Deterministic with -trimpath: the same commit gives the same bytes, so the
 # copy below stays unchanged on a second run.
-- name: Build the linux/arm64 binary on the controller
+- name: Build the linux binary for the target architecture on the controller
   ansible.builtin.command:
     argv: [go, build, -trimpath, "-ldflags=-s -w", -o, "{{ deploy_release_build_dir }}/{{ app_name }}", ./cmd/app]
     chdir: "{{ deploy_release_source_dir }}"
   environment:
     CGO_ENABLED: "0"
     GOOS: linux
-    GOARCH: arm64
+    GOARCH: "{{ deploy_release_goarch }}"
   delegate_to: localhost
   become: false
   run_once: true
