@@ -19,14 +19,14 @@ func TestTemplateExerciseValidateFor(t *testing.T) {
 		wantErr string
 	}{
 		{"sets only", WeightReps, TemplateExercise{TargetSets: 3}, ""},
-		{"full weight_reps", WeightReps, TemplateExercise{TargetSets: 3, TargetRepsMin: ip(8), TargetRepsMax: ip(12), TargetWeightKg: fp(60)}, ""},
+		{"full weight_reps", WeightReps, TemplateExercise{TargetSets: 3, TargetRepsMin: ip(8), TargetRepsMax: ip(12)}, ""},
 		{"zero sets", WeightReps, TemplateExercise{TargetSets: 0}, "target_sets"},
 		{"too many sets", WeightReps, TemplateExercise{TargetSets: MaxTemplateSets + 1}, "target_sets"},
 		{"reversed range", WeightReps, TemplateExercise{TargetSets: 3, TargetRepsMin: ip(12), TargetRepsMax: ip(8)}, "target_reps_min"},
 		{"reps on duration", Duration, TemplateExercise{TargetSets: 3, TargetRepsMin: ip(8), TargetRepsMax: ip(8)}, "target_reps is not used"},
 		{"duration on weight_reps", WeightReps, TemplateExercise{TargetSets: 3, TargetDurationSeconds: ip(60)}, "target_duration_seconds is not used"},
 		{"distance with duration", Distance, TemplateExercise{TargetSets: 1, TargetDistanceM: fp(5000), TargetDurationSeconds: ip(1500)}, ""},
-		{"negative weight", BodyweightReps, TemplateExercise{TargetSets: 3, TargetWeightKg: fp(-1)}, "target_weight_kg must be"},
+		{"negative duration", Duration, TemplateExercise{TargetSets: 3, TargetDurationSeconds: ip(-1)}, "target_duration_seconds must be"},
 		{"long note", WeightReps, TemplateExercise{TargetSets: 3, Notes: sp(strings.Repeat("x", MaxTemplateExerciseNote+1))}, "notes"},
 		{"unknown type", TrackingType("nope"), TemplateExercise{TargetSets: 3}, "unknown tracking type"},
 	}
@@ -63,7 +63,7 @@ func TestTemplateExerciseFromSets(t *testing.T) {
 		{Reps: ip(6), WeightKg: fp(62.5)},
 	}
 	te := TemplateExerciseFromSets(id, WeightReps, sets)
-	if te.ExerciseID != id || te.TargetSets != 3 || *te.TargetRepsMin != 6 || *te.TargetRepsMax != 10 || *te.TargetWeightKg != 65 {
+	if te.ExerciseID != id || te.TargetSets != 3 || *te.TargetRepsMin != 6 || *te.TargetRepsMax != 10 {
 		t.Fatalf("got %+v", te)
 	}
 	if err := te.ValidateFor(WeightReps); err != nil {

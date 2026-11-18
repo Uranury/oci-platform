@@ -22,7 +22,6 @@ type templateExerciseRequest struct {
 	TargetSets            int       `json:"target_sets"`
 	TargetRepsMin         *int      `json:"target_reps_min"`
 	TargetRepsMax         *int      `json:"target_reps_max"`
-	TargetWeightKg        *float64  `json:"target_weight_kg"`
 	TargetDurationSeconds *int      `json:"target_duration_seconds"`
 	TargetDistanceM       *float64  `json:"target_distance_m"`
 	Notes                 *string   `json:"notes"`
@@ -42,8 +41,8 @@ func (req templateRequest) input() service.TemplateInput {
 		items[i] = models.TemplateExercise{
 			ExerciseID: e.ExerciseID, TargetSets: e.TargetSets,
 			TargetRepsMin: e.TargetRepsMin, TargetRepsMax: e.TargetRepsMax,
-			TargetWeightKg: e.TargetWeightKg, TargetDurationSeconds: e.TargetDurationSeconds,
-			TargetDistanceM: e.TargetDistanceM, Notes: e.Notes,
+			TargetDurationSeconds: e.TargetDurationSeconds,
+			TargetDistanceM:       e.TargetDistanceM, Notes: e.Notes,
 		}
 	}
 	return service.TemplateInput{Name: req.Name, Notes: emptyToNil(req.Notes), Exercises: items}

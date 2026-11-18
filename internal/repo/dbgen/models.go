@@ -44,7 +44,6 @@ type TemplateExercise struct {
 	TargetSets            int
 	TargetRepsMin         *int
 	TargetRepsMax         *int
-	TargetWeightKg        *float64
 	TargetDurationSeconds *int
 	TargetDistanceM       *float64
 	Notes                 *string

@@ -114,8 +114,8 @@ func (r *template) Exercises(ctx context.Context, templateID uuid.UUID) ([]model
 			ExerciseName: row.ExerciseName, ExerciseTrackingType: row.ExerciseTrackingType,
 			ExerciseArchived: row.ExerciseArchivedAt != nil, Position: te.Position,
 			TargetSets: te.TargetSets, TargetRepsMin: te.TargetRepsMin, TargetRepsMax: te.TargetRepsMax,
-			TargetWeightKg: te.TargetWeightKg, TargetDurationSeconds: te.TargetDurationSeconds,
-			TargetDistanceM: te.TargetDistanceM, Notes: te.Notes,
+			TargetDurationSeconds: te.TargetDurationSeconds,
+			TargetDistanceM:       te.TargetDistanceM, Notes: te.Notes,
 		}
 	}
 	return out, nil
@@ -129,8 +129,8 @@ func (r *template) ReplaceExercises(ctx context.Context, templateID uuid.UUID, i
 		err := r.q.CreateTemplateExercise(ctx, dbgen.CreateTemplateExerciseParams{
 			TemplateID: templateID, ExerciseID: it.ExerciseID, Position: i,
 			TargetSets: it.TargetSets, TargetRepsMin: it.TargetRepsMin, TargetRepsMax: it.TargetRepsMax,
-			TargetWeightKg: it.TargetWeightKg, TargetDurationSeconds: it.TargetDurationSeconds,
-			TargetDistanceM: it.TargetDistanceM, Notes: it.Notes,
+			TargetDurationSeconds: it.TargetDurationSeconds,
+			TargetDistanceM:       it.TargetDistanceM, Notes: it.Notes,
 		})
 		if err != nil {
 			return translate(err)

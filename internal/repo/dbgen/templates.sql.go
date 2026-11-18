@@ -44,11 +44,11 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 
 const createTemplateExercise = `-- name: CreateTemplateExercise :exec
 INSERT INTO template_exercises (template_id, exercise_id, position, target_sets,
-    target_reps_min, target_reps_max, target_weight_kg, target_duration_seconds,
+    target_reps_min, target_reps_max, target_duration_seconds,
     target_distance_m, notes)
 VALUES ($1, $2, $3, $4,
-    $5, $6, $7, $8,
-    $9, $10)
+    $5, $6, $7,
+    $8, $9)
 `
 
 type CreateTemplateExerciseParams struct {
@@ -58,7 +58,6 @@ type CreateTemplateExerciseParams struct {
 	TargetSets            int
 	TargetRepsMin         *int
 	TargetRepsMax         *int
-	TargetWeightKg        *float64
 	TargetDurationSeconds *int
 	TargetDistanceM       *float64
 	Notes                 *string
@@ -72,7 +71,6 @@ func (q *Queries) CreateTemplateExercise(ctx context.Context, arg CreateTemplate
 		arg.TargetSets,
 		arg.TargetRepsMin,
 		arg.TargetRepsMax,
-		arg.TargetWeightKg,
 		arg.TargetDurationSeconds,
 		arg.TargetDistanceM,
 		arg.Notes,
@@ -130,7 +128,7 @@ func (q *Queries) GetTemplate(ctx context.Context, arg GetTemplateParams) (Worko
 }
 
 const listTemplateExercises = `-- name: ListTemplateExercises :many
-SELECT te.id, te.template_id, te.exercise_id, te.position, te.target_sets, te.target_reps_min, te.target_reps_max, te.target_weight_kg, te.target_duration_seconds, te.target_distance_m, te.notes, e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+SELECT te.id, te.template_id, te.exercise_id, te.position, te.target_sets, te.target_reps_min, te.target_reps_max, te.target_duration_seconds, te.target_distance_m, te.notes, e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
     e.archived_at AS exercise_archived_at
 FROM template_exercises te JOIN exercises e ON e.id = te.exercise_id
 WHERE te.template_id = $1
@@ -163,7 +161,6 @@ func (q *Queries) ListTemplateExercises(ctx context.Context, templateID uuid.UUI
 			&i.TemplateExercise.TargetSets,
 			&i.TemplateExercise.TargetRepsMin,
 			&i.TemplateExercise.TargetRepsMax,
-			&i.TemplateExercise.TargetWeightKg,
 			&i.TemplateExercise.TargetDurationSeconds,
 			&i.TemplateExercise.TargetDistanceM,
 			&i.TemplateExercise.Notes,

@@ -353,7 +353,7 @@ function fmtSet(s) {
   return parts.join(" · ");
 }
 
-// "2/3 sets · 8–12 reps · 60 kg"; done is omitted outside a workout.
+// "2/3 sets · 8–12 reps"; done is omitted outside a workout.
 function fmtTarget(t, done) {
   const out = [`${done != null ? done + "/" : ""}${t.target_sets} set${t.target_sets === 1 && done == null ? "" : "s"}`];
   if (t.target_reps_min != null) {
@@ -362,9 +362,6 @@ function fmtTarget(t, done) {
   }
   if (t.target_distance_m != null) out.push(`${fmtWeight(t.target_distance_m)} m`);
   if (t.target_duration_seconds != null) out.push(fmtDuration(t.target_duration_seconds));
-  if (t.target_weight_kg != null) {
-    out.push((t.exercise_tracking_type === "weight_reps" ? "" : "+") + fmtWeight(t.target_weight_kg) + " kg");
-  }
   return out.join(" · ");
 }
 
@@ -497,7 +494,14 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
   const notes = h("textarea", { placeholder: "Notes" });
   notes.value = w.notes || "";
 
-  async function saveMeta() {
+  // Finish waits for an in-flight save (editing notes then tapping Finish
+  // fires "change" right before the click).
+  let pendingSave = Promise.resolve();
+  function saveMeta() {
+    pendingSave = saveMetaNow();
+    return pendingSave;
+  }
+  async function saveMetaNow() {
     try {
       await api("PUT", "/workouts/" + id, {
         name: name.value,
@@ -607,7 +611,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
       if (!ex) { fieldsBox.replaceChildren(); return; }
       const te = plan.find((p) => p.exercise_id === ex.id);
       const prev = lastByExercise[ex.id] || (te ? {
-        reps: te.target_reps_min, weight_kg: te.target_weight_kg,
+        reps: te.target_reps_min,
         duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
       } : {});
       fieldsBox.replaceChildren(...SET_FIELDS[ex.tracking_type].map(([key, label, required]) => {
@@ -677,7 +681,29 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     return form;
   }
 
-  const saveAsTemplate = w.sets.length ? h("button.block", {
+  // Sets are saved as they're logged, so finishing only leaves the page;
+  // an empty workout is offered for discarding instead of kept as clutter.
+  const finish = h("button.primary.block", {
+    onclick: async () => {
+      await pendingSave;
+      if (!w.sets.length) {
+        if (!confirm("No sets logged. Discard this empty workout?")) return;
+        try {
+          await api("DELETE", "/workouts/" + id);
+          toast("Workout discarded");
+          go("#/");
+        } catch (e) { fail(e); }
+        return;
+      }
+      const n = w.sets.length;
+      toast(`Workout saved · ${n} set${n === 1 ? "" : "s"}`);
+      go("#/");
+    },
+  }, "Finish workout");
+
+  // Only for workouts not started from a template: turning one you
+  // improvised into a reusable plan.
+  const saveAsTemplate = w.sets.length && !template ? h("button.block", {
     onclick: async () => {
       const n = prompt("Name for the new template", w.name || "");
       if (n === null) return;
@@ -708,7 +734,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     groupCards.length ? null : h("p.muted.empty", {}, "No sets yet. Log your first one below."),
     entry,
     h("div.card", {}, h("label", {}, "Notes"), notes),
-    saveAsTemplate,
+    h("div.stack", { style: "margin-bottom:12px" }, finish, saveAsTemplate),
     del,
   );
 }
@@ -738,17 +764,17 @@ async function viewTemplates() {
 }
 
 // Target inputs per tracking type; mirrors models.setRules on the server
-// (which enforces it). All targets are optional.
+// (which enforces it). All targets are optional. No weight: it's meant to
+// go up, so it isn't part of the plan.
 const TARGET_FIELDS = {
-  weight_reps: ["reps", "weight_kg"],
-  bodyweight_reps: ["reps", "weight_kg"],
-  duration: ["duration", "weight_kg"],
-  distance: ["distance_m", "duration", "weight_kg"],
+  weight_reps: ["reps"],
+  bodyweight_reps: ["reps"],
+  duration: ["duration"],
+  distance: ["distance_m", "duration"],
 };
 
 const TARGET_INPUTS = {
   reps: { label: "Reps", attrs: { inputmode: "numeric", placeholder: "8 or 8-12", pattern: "\\d+(\\s*[\\-–]\\s*\\d+)?" } },
-  weight_kg: { label: "Weight (kg)", attrs: { type: "number", inputmode: "decimal", min: 0, step: "0.25", placeholder: "optional" } },
   duration: { label: "Time (min:sec)", attrs: { inputmode: "numeric", placeholder: "1:30", pattern: "\\d+(:[0-5]?\\d)?" } },
   distance_m: { label: "Distance (m)", attrs: { type: "number", inputmode: "decimal", min: 0, step: "any", placeholder: "optional" } },
 };
@@ -780,14 +806,13 @@ async function viewTemplate(id) {
   const library = exercises.filter((e) => e.system);
 
   // Each row keeps raw input strings; they're parsed on save.
-  const blank = () => ({ exercise_id: "", sets: "3", reps: "", weight_kg: "", duration: "", distance_m: "", notes: "" });
+  const blank = () => ({ exercise_id: "", sets: "3", reps: "", duration: "", distance_m: "", notes: "" });
   const items = t.exercises.map((te) => ({
     exercise_id: te.exercise_id,
     sets: String(te.target_sets),
     reps: te.target_reps_min == null ? ""
       : te.target_reps_min === te.target_reps_max ? String(te.target_reps_min)
       : `${te.target_reps_min}-${te.target_reps_max}`,
-    weight_kg: te.target_weight_kg == null ? "" : fmtWeight(te.target_weight_kg),
     duration: te.target_duration_seconds == null ? "" : fmtDuration(te.target_duration_seconds),
     distance_m: te.target_distance_m == null ? "" : fmtWeight(te.target_distance_m),
     notes: te.notes || "",
@@ -822,8 +847,7 @@ async function viewTemplate(id) {
     const targets = ex
       ? TARGET_FIELDS[ex.tracking_type].map((key) => {
           const { label, attrs } = TARGET_INPUTS[key];
-          const l = key === "weight_kg" && ex.tracking_type !== "weight_reps" ? "Added weight (kg)" : label;
-          return field(l, bind(item, key, attrs));
+          return field(label, bind(item, key, attrs));
         })
       : [];
 
@@ -863,7 +887,6 @@ async function viewTemplate(id) {
         if (!r) throw new Error(`Exercise ${i + 1}: reps must look like 8 or 8-12`);
         [body.target_reps_min, body.target_reps_max] = r;
       }
-      if (has("weight_kg")) body.target_weight_kg = parseFloat(it.weight_kg);
       if (has("duration")) body.target_duration_seconds = parseDuration(it.duration);
       if (has("distance_m")) body.target_distance_m = parseFloat(it.distance_m);
       out.push(body);
