@@ -44,6 +44,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			return
 		}
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register user"})
 		return
 	}
@@ -73,6 +74,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not log in"})
 		return
 	}
@@ -96,6 +98,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired refresh token"})
 			return
 		}
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not refresh token"})
 		return
 	}
@@ -110,6 +113,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	if err := h.auth.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not log out"})
 		return
 	}
@@ -122,6 +126,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	userID := c.MustGet(userIDKey).(uuid.UUID)
 	if err := h.auth.LogoutAll(c.Request.Context(), userID); err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not log out"})
 		return
 	}

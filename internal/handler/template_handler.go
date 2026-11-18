@@ -52,6 +52,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 	userID := c.MustGet(userIDKey).(uuid.UUID)
 	list, err := h.svc.List(c.Request.Context(), userID)
 	if err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list templates"})
 		return
 	}
