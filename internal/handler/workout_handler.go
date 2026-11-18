@@ -179,6 +179,25 @@ func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// FinishWorkout records when the workout ended (once; see
+// service.WorkoutService.FinishWorkout) and returns it.
+func (h *WorkoutHandler) FinishWorkout(w http.ResponseWriter, r *http.Request) {
+	userID, ok := mustUser(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	wo, err := h.svc.FinishWorkout(r.Context(), userID, id)
+	if err != nil {
+		writeLookupError(w, err, "workout")
+		return
+	}
+	writeJSON(w, http.StatusOK, wo)
+}
+
 // --- sets ---
 
 type setRequest struct {
@@ -187,6 +206,15 @@ type setRequest struct {
 	WeightKg        *float64  `json:"weight_kg"`
 	DurationSeconds *int      `json:"duration_seconds"`
 	DistanceM       *float64  `json:"distance_m"`
+}
+
+func (req setRequest) input() service.SetInput {
+	return service.SetInput{
+		Reps:            req.Reps,
+		WeightKg:        req.WeightKg,
+		DurationSeconds: req.DurationSeconds,
+		DistanceM:       req.DistanceM,
+	}
 }
 
 // AddSet logs a set. Which measurements are required depends on the
@@ -209,17 +237,44 @@ func (h *WorkoutHandler) AddSet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "exercise_id is required")
 		return
 	}
-	set, err := h.svc.AddSet(r.Context(), userID, workoutID, req.ExerciseID, service.SetInput{
-		Reps:            req.Reps,
-		WeightKg:        req.WeightKg,
-		DurationSeconds: req.DurationSeconds,
-		DistanceM:       req.DistanceM,
-	})
+	set, err := h.svc.AddSet(r.Context(), userID, workoutID, req.ExerciseID, req.input())
 	if err != nil {
 		writeLookupError(w, err, "workout or exercise")
 		return
 	}
 	writeJSON(w, http.StatusCreated, set)
+}
+
+// UpdateSet overwrites a set's exercise and measurements; same body and
+// validation as AddSet.
+func (h *WorkoutHandler) UpdateSet(w http.ResponseWriter, r *http.Request) {
+	userID, ok := mustUser(w, r)
+	if !ok {
+		return
+	}
+	workoutID, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	setID, ok := pathID(w, r, "setID")
+	if !ok {
+		return
+	}
+	var req setRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ExerciseID == uuid.Nil {
+		writeError(w, http.StatusBadRequest, "exercise_id is required")
+		return
+	}
+	set, err := h.svc.UpdateSet(r.Context(), userID, workoutID, setID, req.ExerciseID, req.input())
+	if err != nil {
+		writeLookupError(w, err, "set or exercise")
+		return
+	}
+	writeJSON(w, http.StatusOK, set)
 }
 
 func (h *WorkoutHandler) DeleteSet(w http.ResponseWriter, r *http.Request) {

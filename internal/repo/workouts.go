@@ -28,7 +28,7 @@ func NewWorkout(exec dbutil.Executor) Workout {
 func toWorkout(r dbgen.Workout) models.Workout {
 	return models.Workout{
 		ID: r.ID, UserID: r.UserID, Name: r.Name, Notes: r.Notes, PerformedAt: r.PerformedAt,
-		TemplateID: r.TemplateID, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TemplateID: r.TemplateID, FinishedAt: r.FinishedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
@@ -68,6 +68,7 @@ func (r *workout) ListByUser(ctx context.Context, userID uuid.UUID) ([]models.Wo
 func (r *workout) Update(ctx context.Context, m *models.Workout) error {
 	updatedAt, err := r.q.UpdateWorkout(ctx, dbgen.UpdateWorkoutParams{
 		ID: m.ID, UserID: m.UserID, Name: m.Name, Notes: m.Notes, PerformedAt: m.PerformedAt,
+		FinishedAt: m.FinishedAt,
 	})
 	if err != nil {
 		return translate(err)

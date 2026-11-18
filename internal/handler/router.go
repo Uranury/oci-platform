@@ -31,7 +31,9 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	mux.HandleFunc("GET /workouts/{id}", requireAuth(jwtIssuer, workoutH.GetWorkout))
 	mux.HandleFunc("PUT /workouts/{id}", requireAuth(jwtIssuer, workoutH.UpdateWorkout))
 	mux.HandleFunc("DELETE /workouts/{id}", requireAuth(jwtIssuer, workoutH.DeleteWorkout))
+	mux.HandleFunc("POST /workouts/{id}/finish", requireAuth(jwtIssuer, workoutH.FinishWorkout))
 	mux.HandleFunc("POST /workouts/{id}/sets", requireAuth(jwtIssuer, workoutH.AddSet))
+	mux.HandleFunc("PUT /workouts/{id}/sets/{setID}", requireAuth(jwtIssuer, workoutH.UpdateSet))
 	mux.HandleFunc("DELETE /workouts/{id}/sets/{setID}", requireAuth(jwtIssuer, workoutH.DeleteSet))
 	mux.HandleFunc("POST /workouts/{id}/save-as-template", requireAuth(jwtIssuer, templateH.FromWorkout))
 

@@ -158,3 +158,66 @@ func (q *Queries) ListWorkoutSets(ctx context.Context, workoutID uuid.UUID) ([]L
 	}
 	return items, nil
 }
+
+const updateWorkoutSet = `-- name: UpdateWorkoutSet :one
+WITH updated AS (
+    UPDATE workout_sets ws SET exercise_id = $1, reps = $2, weight_kg = $3,
+        duration_seconds = $4, distance_m = $5
+    WHERE ws.id = $6 AND ws.workout_id = $7
+    RETURNING ws.id, ws.workout_id, ws.exercise_id, ws.reps, ws.weight_kg, ws.created_at, ws.duration_seconds, ws.distance_m
+)
+SELECT u.id, u.workout_id, u.exercise_id, u.reps, u.weight_kg, u.duration_seconds,
+    u.distance_m, u.created_at,
+    e.name AS exercise_name, e.tracking_type AS exercise_tracking_type
+FROM updated u JOIN exercises e ON e.id = u.exercise_id
+`
+
+type UpdateWorkoutSetParams struct {
+	ExerciseID      uuid.UUID
+	Reps            *int
+	WeightKg        *float64
+	DurationSeconds *int
+	DistanceM       *float64
+	ID              uuid.UUID
+	WorkoutID       uuid.UUID
+}
+
+type UpdateWorkoutSetRow struct {
+	ID                   uuid.UUID
+	WorkoutID            uuid.UUID
+	ExerciseID           uuid.UUID
+	Reps                 *int
+	WeightKg             *float64
+	DurationSeconds      *int
+	DistanceM            *float64
+	CreatedAt            time.Time
+	ExerciseName         string
+	ExerciseTrackingType models.TrackingType
+}
+
+// Scoped to the workout so a set ID from another workout never matches.
+func (q *Queries) UpdateWorkoutSet(ctx context.Context, arg UpdateWorkoutSetParams) (UpdateWorkoutSetRow, error) {
+	row := q.db.QueryRow(ctx, updateWorkoutSet,
+		arg.ExerciseID,
+		arg.Reps,
+		arg.WeightKg,
+		arg.DurationSeconds,
+		arg.DistanceM,
+		arg.ID,
+		arg.WorkoutID,
+	)
+	var i UpdateWorkoutSetRow
+	err := row.Scan(
+		&i.ID,
+		&i.WorkoutID,
+		&i.ExerciseID,
+		&i.Reps,
+		&i.WeightKg,
+		&i.DurationSeconds,
+		&i.DistanceM,
+		&i.CreatedAt,
+		&i.ExerciseName,
+		&i.ExerciseTrackingType,
+	)
+	return i, err
+}

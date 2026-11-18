@@ -73,6 +73,8 @@ func (s *WorkoutService) GetWorkout(ctx context.Context, userID, id uuid.UUID) (
 }
 
 // UpdateWorkout overwrites name and notes; performedAt is kept when zero.
+// Moving performedAt moves FinishedAt by the same amount, so a corrected
+// date keeps the session's duration.
 func (s *WorkoutService) UpdateWorkout(ctx context.Context, userID, id uuid.UUID, name, notes *string, performedAt time.Time) (*models.Workout, error) {
 	w, err := s.getWorkout(ctx, userID, id)
 	if err != nil {
@@ -81,8 +83,37 @@ func (s *WorkoutService) UpdateWorkout(ctx context.Context, userID, id uuid.UUID
 	w.Name = name
 	w.Notes = notes
 	if !performedAt.IsZero() {
+		if w.FinishedAt != nil {
+			f := w.FinishedAt.Add(performedAt.Sub(w.PerformedAt))
+			w.FinishedAt = &f
+		}
 		w.PerformedAt = performedAt
 	}
+	if err := s.workouts.Update(ctx, w); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// MaxAutoFinishAge bounds FinishWorkout: a workout that started longer ago
+// than this was logged after the fact, so "now" isn't when it ended.
+const MaxAutoFinishAge = 12 * time.Hour
+
+// FinishWorkout records now as the end of the workout, once. It's left
+// unset (duration unknown) when the workout started more than
+// MaxAutoFinishAge ago or is dated in the future, rather than storing a
+// duration that's wrong. Calling it again changes nothing, so reopening an
+// old workout to fix a typo doesn't stretch its duration.
+func (s *WorkoutService) FinishWorkout(ctx context.Context, userID, id uuid.UUID) (*models.Workout, error) {
+	w, err := s.getWorkout(ctx, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if age := now.Sub(w.PerformedAt); w.FinishedAt != nil || age < 0 || age > MaxAutoFinishAge {
+		return w, nil
+	}
+	w.FinishedAt = &now
 	if err := s.workouts.Update(ctx, w); err != nil {
 		return nil, err
 	}
@@ -111,31 +142,60 @@ func (s *WorkoutService) AddSet(ctx context.Context, userID, workoutID, exercise
 	if _, err := s.getWorkout(ctx, userID, workoutID); err != nil {
 		return nil, err
 	}
-	// Never trust the client's exercise ID: it must be a system default or
-	// the user's own, or this would log against (and leak the name of)
-	// someone else's private exercise.
-	ex, err := s.exercises.GetVisible(ctx, userID, exerciseID)
-	if err != nil {
-		return nil, err
-	}
-	if ex.ArchivedAt != nil {
-		return nil, ErrExerciseArchived
-	}
-	set := &models.WorkoutSet{
-		WorkoutID:       workoutID,
-		ExerciseID:      exerciseID,
-		Reps:            in.Reps,
-		WeightKg:        in.WeightKg,
-		DurationSeconds: in.DurationSeconds,
-		DistanceM:       in.DistanceM,
-	}
-	if err := set.ValidateFor(ex.TrackingType); err != nil {
+	set := &models.WorkoutSet{WorkoutID: workoutID, ExerciseID: exerciseID}
+	if err := s.checkSet(ctx, userID, set, in, uuid.Nil); err != nil {
 		return nil, err
 	}
 	if err := s.sets.Create(ctx, set); err != nil {
 		return nil, err
 	}
 	return set, nil
+}
+
+// UpdateSet overwrites a logged set's exercise and measurements (fixing a
+// typo or a wrongly picked exercise). It keeps its place in the workout.
+func (s *WorkoutService) UpdateSet(ctx context.Context, userID, workoutID, setID, exerciseID uuid.UUID, in SetInput) (*models.WorkoutSet, error) {
+	if _, err := s.getWorkout(ctx, userID, workoutID); err != nil {
+		return nil, err
+	}
+	cur, err := s.sets.GetByID(ctx, setID)
+	if err != nil {
+		return nil, err
+	}
+	if cur.WorkoutID != workoutID {
+		return nil, ErrForbidden
+	}
+	set := &models.WorkoutSet{ID: setID, WorkoutID: workoutID, ExerciseID: exerciseID}
+	// The set's current exercise may have been archived since; editing the
+	// numbers must still work.
+	if err := s.checkSet(ctx, userID, set, in, cur.ExerciseID); err != nil {
+		return nil, err
+	}
+	if err := s.sets.Update(ctx, set); err != nil {
+		return nil, err
+	}
+	return set, nil
+}
+
+// checkSet fills set's measurements from in and validates them against the
+// exercise. The exercise must be visible to the user and not archived,
+// unless it is allowArchived (the exercise the set already had).
+func (s *WorkoutService) checkSet(ctx context.Context, userID uuid.UUID, set *models.WorkoutSet, in SetInput, allowArchived uuid.UUID) error {
+	// Never trust the client's exercise ID: it must be a system default or
+	// the user's own, or this would log against (and leak the name of)
+	// someone else's private exercise.
+	ex, err := s.exercises.GetVisible(ctx, userID, set.ExerciseID)
+	if err != nil {
+		return err
+	}
+	if ex.ArchivedAt != nil && ex.ID != allowArchived {
+		return ErrExerciseArchived
+	}
+	set.Reps = in.Reps
+	set.WeightKg = in.WeightKg
+	set.DurationSeconds = in.DurationSeconds
+	set.DistanceM = in.DistanceM
+	return set.ValidateFor(ex.TrackingType)
 }
 
 func (s *WorkoutService) DeleteSet(ctx context.Context, userID, workoutID, setID uuid.UUID) error {

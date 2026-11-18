@@ -131,6 +131,14 @@ function fmtWeight(kg) {
   return (Math.round(kg * 100) / 100).toString();
 }
 
+// Session length: "45 min", "1 h 05 min".
+function fmtSession(startIso, endIso) {
+  const min = Math.max(0, Math.round((new Date(endIso) - new Date(startIso)) / 60000));
+  if (min < 1) return "<1 min";
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
+}
+
 // "today", "yesterday", "3 days ago", then a date.
 function fmtAgo(iso) {
   const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -296,7 +304,8 @@ async function viewWorkouts() {
     ? workouts.map((w) =>
         h("a.workout-item", { href: "#/workouts/" + w.id },
           h("div.title", {}, w.name || "Workout"),
-          h("div.muted.small", {}, fmtDate(w.performed_at) + " · " + fmtTime(w.performed_at))))
+          h("div.muted.small", {}, fmtDate(w.performed_at) + " · " + fmtTime(w.performed_at) +
+            (w.finished_at ? " · " + fmtSession(w.performed_at, w.finished_at) : ""))))
     : [h("p.muted.empty", {}, "No workouts yet. Start your first one.")];
 
   render(
@@ -474,7 +483,9 @@ function parseDuration(str) {
   return parseInt(t, 10); // plain number = seconds
 }
 
-async function viewWorkout(id, { creatingExercise = false } = {}) {
+// editSetId: a logged set being corrected in the set form instead of a
+// new one being logged.
+async function viewWorkout(id, { creatingExercise = false, editSetId = null } = {}) {
   if (!app.childElementCount) render(h("p.muted", {}, "Loading…"));
   const [w, exercises, opts] = await Promise.all([
     api("GET", "/workouts/" + id),
@@ -529,6 +540,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     ...[...groups].filter(([exId]) => !planned.has(exId)).map(([, g]) => ({ g })),
   ];
   const doneOf = (exId) => (groups.get(exId) || { sets: [] }).sets.length;
+  const editing = editSetId ? w.sets.find((s) => s.id === editSetId) : null;
 
   const groupCards = cards.map(({ te, g }) =>
     h("div.card", {},
@@ -546,9 +558,13 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
         fmtTarget(te, g.sets.length) + (te.exercise_archived ? " · archived" : "")) : null,
       te && te.notes ? h("p.muted.small.plan-meta", {}, te.notes) : null,
       h("ul.sets", {}, g.sets.map((s, i) =>
-        h("li", {},
+        h("li", { class: editing && s.id === editing.id ? "editing" : null },
           h("span.n", {}, i + 1),
-          h("span.v", {}, fmtSet(s)),
+          h("button.v", {
+            type: "button",
+            title: "Edit set",
+            onclick: () => viewWorkout(id, { editSetId: s.id }).catch(fail),
+          }, fmtSet(s)),
           h("button.icon", {
             "aria-label": "Delete set",
             title: "Delete set",
@@ -582,11 +598,22 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     const NEW = "__new__";
     const mine = exercises.filter((e) => !e.system);
     const library = exercises.filter((e) => e.system);
+    // A set being edited may use an exercise archived since; keep it
+    // selectable so only the numbers need fixing.
+    let archivedOpt = null;
+    if (editing && !byId[editing.exercise_id]) {
+      byId[editing.exercise_id] = {
+        id: editing.exercise_id, name: editing.exercise_name + " (archived)",
+        tracking_type: editing.exercise_tracking_type,
+      };
+      archivedOpt = h("option", { value: editing.exercise_id }, byId[editing.exercise_id].name);
+    }
     const exSelect = h("select", { required: true },
       h("option", { value: "" }, "Choose exercise…"),
+      archivedOpt,
       mine.length ? h("optgroup", { label: "My exercises" }, mine.map((e) => h("option", { value: e.id }, e.name))) : null,
       h("optgroup", { label: "Library" }, library.map((e) => h("option", { value: e.id }, e.name))),
-      h("option", { value: NEW }, "+ New exercise…"));
+      editing ? null : h("option", { value: NEW }, "+ New exercise…"));
 
     const lastInWorkout = w.sets.length ? w.sets[w.sets.length - 1].exercise_id : null;
     let prefer = byId[lastExerciseId] ? lastExerciseId : lastInWorkout;
@@ -600,6 +627,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
         if (next) prefer = next.exercise_id;
       }
     }
+    if (editing) prefer = editing.exercise_id;
     if (prefer && byId[prefer]) exSelect.value = prefer;
 
     const fieldsBox = h("div.row");
@@ -610,7 +638,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
       const ex = byId[exSelect.value];
       if (!ex) { fieldsBox.replaceChildren(); return; }
       const te = plan.find((p) => p.exercise_id === ex.id);
-      const prev = lastByExercise[ex.id] || (te ? {
+      const prev = editing && editing.exercise_id === ex.id ? editing : lastByExercise[ex.id] || (te ? {
         reps: te.target_reps_min,
         duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
       } : {});
@@ -635,12 +663,12 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
 
     exSelect.addEventListener("change", () => {
       if (exSelect.value === NEW) return viewWorkout(id, { creatingExercise: true }).catch(fail);
-      lastExerciseId = exSelect.value;
+      if (!editing) lastExerciseId = exSelect.value;
       buildFields();
     });
     buildFields();
 
-    const addBtn = h("button.primary.block", { type: "submit" }, "Log set");
+    const addBtn = h("button.primary.block", { type: "submit" }, editing ? "Save set" : "Log set");
     const form = h("form.card.stack", {
       onsubmit: async (e) => {
         e.preventDefault();
@@ -656,8 +684,13 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
         };
         addBtn.disabled = true;
         try {
-          await api("POST", `/workouts/${id}/sets`, body);
-          lastExerciseId = ex.id;
+          if (editing) {
+            await api("PUT", `/workouts/${id}/sets/${editing.id}`, body);
+            toast("Set updated");
+          } else {
+            await api("POST", `/workouts/${id}/sets`, body);
+            lastExerciseId = ex.id;
+          }
           viewWorkout(id).catch(fail);
         } catch (ex2) {
           fail(ex2);
@@ -665,9 +698,14 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
         }
       },
     },
+      editing ? h("h2", {}, "Edit set") : null,
       field("Exercise", exSelect),
       fieldsBox,
-      addBtn);
+      editing
+        ? h("div.row", {},
+            h("button", { type: "button", onclick: () => viewWorkout(id).catch(fail) }, "Cancel"),
+            addBtn)
+        : addBtn);
 
     // Called by a plan card's "Log" button.
     form.pick = (exId) => {
@@ -695,11 +733,15 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
         } catch (e) { fail(e); }
         return;
       }
-      const n = w.sets.length;
-      toast(`Workout saved · ${n} set${n === 1 ? "" : "s"}`);
-      go("#/");
+      try {
+        const done = await api("POST", `/workouts/${id}/finish`);
+        const n = w.sets.length;
+        toast(`Workout saved · ${n} set${n === 1 ? "" : "s"}` +
+          (done.finished_at ? " · " + fmtSession(done.performed_at, done.finished_at) : ""));
+        go("#/");
+      } catch (e) { fail(e); }
     },
-  }, "Finish workout");
+  }, w.finished_at ? "Done" : "Finish workout");
 
   // Only for workouts not started from a template: turning one you
   // improvised into a reusable plan.
@@ -728,8 +770,10 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
   render(
     h("p", {}, h("a.muted.small", { href: "#/" }, "← All workouts")),
     h("div.card.stack", {}, name, when,
-      template ? h("p.muted.small", { style: "margin-bottom:0" }, "From template ",
-        h("a", { href: "#/templates/" + template.id }, template.name)) : null),
+      template || w.finished_at ? h("p.muted.small", { style: "margin-bottom:0" },
+        template ? ["From template ", h("a", { href: "#/templates/" + template.id }, template.name)] : null,
+        template && w.finished_at ? " · " : null,
+        w.finished_at ? "Took " + fmtSession(w.performed_at, w.finished_at) : null) : null),
     ...groupCards,
     groupCards.length ? null : h("p.muted.empty", {}, "No sets yet. Log your first one below."),
     entry,
@@ -737,6 +781,11 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     h("div.stack", { style: "margin-bottom:12px" }, finish, saveAsTemplate),
     del,
   );
+  if (editing) {
+    entry.scrollIntoView({ block: "center" });
+    const first = entry.querySelector("input");
+    if (first) first.focus({ preventScroll: true });
+  }
 }
 
 // ---------- views: templates ----------

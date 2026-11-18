@@ -10,7 +10,8 @@ SELECT * FROM workouts WHERE id = @id;
 SELECT * FROM workouts WHERE user_id = @user_id ORDER BY performed_at DESC;
 
 -- name: UpdateWorkout :one
-UPDATE workouts SET name = @name, notes = @notes, performed_at = @performed_at, updated_at = now()
+UPDATE workouts SET name = @name, notes = @notes, performed_at = @performed_at,
+    finished_at = @finished_at, updated_at = now()
 WHERE id = @id AND user_id = @user_id
 RETURNING updated_at;
 
