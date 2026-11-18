@@ -1,15 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Uranury/oci-platform/internal/models"
-	"github.com/Uranury/oci-platform/internal/repo"
 	"github.com/Uranury/oci-platform/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -19,47 +17,6 @@ type WorkoutHandler struct {
 
 func NewWorkoutHandler(s *service.WorkoutService) *WorkoutHandler {
 	return &WorkoutHandler{svc: s}
-}
-
-// pathID parses the named path value as a UUID, writing a 400 on failure.
-func pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
-	id, err := uuid.Parse(r.PathValue(name))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid "+name)
-		return uuid.Nil, false
-	}
-	return id, true
-}
-
-// mustUser reads the user ID requireAuth put in the context.
-func mustUser(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	id, ok := userIDFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-	}
-	return id, ok
-}
-
-// writeLookupError maps service errors to responses. Missing and not-owned
-// resources are both 404, so a client can't probe which IDs exist.
-func writeLookupError(w http.ResponseWriter, err error, what string) {
-	var verr models.ValidationError
-	switch {
-	case errors.As(err, &verr):
-		writeError(w, http.StatusBadRequest, verr.Error())
-	case errors.Is(err, repo.ErrNotFound), errors.Is(err, service.ErrForbidden):
-		writeError(w, http.StatusNotFound, what+" not found")
-	case errors.Is(err, service.ErrReadOnly):
-		writeError(w, http.StatusForbidden, "default exercises are read-only; duplicate it to customize")
-	case errors.Is(err, service.ErrExerciseExists):
-		writeError(w, http.StatusConflict, "you already have an exercise with that name")
-	case errors.Is(err, service.ErrTemplateExists):
-		writeError(w, http.StatusConflict, "you already have a template with that name")
-	case errors.Is(err, service.ErrExerciseArchived):
-		writeError(w, http.StatusConflict, "exercise is archived")
-	default:
-		writeError(w, http.StatusInternalServerError, "could not process "+what)
-	}
 }
 
 // emptyToNil turns "" (after trimming) into nil so blank form fields clear
@@ -90,112 +47,98 @@ func (req workoutRequest) performedAt() time.Time {
 	return *req.PerformedAt
 }
 
-func (h *WorkoutHandler) CreateWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
+func (h *WorkoutHandler) CreateWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
 	var req workoutRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	wo, err := h.svc.CreateWorkout(r.Context(), userID, emptyToNil(req.Name), emptyToNil(req.Notes), req.performedAt())
+	wo, err := h.svc.CreateWorkout(c.Request.Context(), userID, emptyToNil(req.Name), emptyToNil(req.Notes), req.performedAt())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create workout")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create workout"})
 		return
 	}
-	writeJSON(w, http.StatusCreated, wo)
+	c.JSON(http.StatusCreated, wo)
 }
 
-func (h *WorkoutHandler) ListWorkouts(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListWorkouts(r.Context(), userID)
+func (h *WorkoutHandler) ListWorkouts(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	list, err := h.svc.ListWorkouts(c.Request.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list workouts")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list workouts"})
 		return
 	}
 	if list == nil {
 		list = []models.Workout{}
 	}
-	writeJSON(w, http.StatusOK, list)
+	c.JSON(http.StatusOK, list)
 }
 
-func (h *WorkoutHandler) GetWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *WorkoutHandler) GetWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	wo, err := h.svc.GetWorkout(r.Context(), userID, id)
+	wo, err := h.svc.GetWorkout(c.Request.Context(), userID, uri.ID)
 	if err != nil {
-		writeLookupError(w, err, "workout")
+		_ = c.Error(err).SetMeta("workout")
 		return
 	}
-	writeJSON(w, http.StatusOK, wo)
+	c.JSON(http.StatusOK, wo)
 }
 
-func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
+func (h *WorkoutHandler) UpdateWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req workoutRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	wo, err := h.svc.UpdateWorkout(r.Context(), userID, id, emptyToNil(req.Name), emptyToNil(req.Notes), req.performedAt())
+	wo, err := h.svc.UpdateWorkout(c.Request.Context(), userID, uri.ID, emptyToNil(req.Name), emptyToNil(req.Notes), req.performedAt())
 	if err != nil {
-		writeLookupError(w, err, "workout")
+		_ = c.Error(err).SetMeta("workout")
 		return
 	}
-	writeJSON(w, http.StatusOK, wo)
+	c.JSON(http.StatusOK, wo)
 }
 
-func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *WorkoutHandler) DeleteWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
+	if err := h.svc.DeleteWorkout(c.Request.Context(), userID, uri.ID); err != nil {
+		_ = c.Error(err).SetMeta("workout")
 		return
 	}
-	if err := h.svc.DeleteWorkout(r.Context(), userID, id); err != nil {
-		writeLookupError(w, err, "workout")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
 // FinishWorkout records when the workout ended (once; see
 // service.WorkoutService.FinishWorkout) and returns it.
-func (h *WorkoutHandler) FinishWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *WorkoutHandler) FinishWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	wo, err := h.svc.FinishWorkout(r.Context(), userID, id)
+	wo, err := h.svc.FinishWorkout(c.Request.Context(), userID, uri.ID)
 	if err != nil {
-		writeLookupError(w, err, "workout")
+		_ = c.Error(err).SetMeta("workout")
 		return
 	}
-	writeJSON(w, http.StatusOK, wo)
+	c.JSON(http.StatusOK, wo)
 }
 
 // --- sets ---
@@ -219,80 +162,66 @@ func (req setRequest) input() service.SetInput {
 
 // AddSet logs a set. Which measurements are required depends on the
 // exercise's tracking_type (see models.WorkoutSet.ValidateFor).
-func (h *WorkoutHandler) AddSet(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	workoutID, ok := pathID(w, r, "id")
-	if !ok {
+func (h *WorkoutHandler) AddSet(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req setRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 	if req.ExerciseID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "exercise_id is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exercise_id is required"})
 		return
 	}
-	set, err := h.svc.AddSet(r.Context(), userID, workoutID, req.ExerciseID, req.input())
+	set, err := h.svc.AddSet(c.Request.Context(), userID, uri.ID, req.ExerciseID, req.input())
 	if err != nil {
-		writeLookupError(w, err, "workout or exercise")
+		_ = c.Error(err).SetMeta("workout or exercise")
 		return
 	}
-	writeJSON(w, http.StatusCreated, set)
+	c.JSON(http.StatusCreated, set)
 }
 
 // UpdateSet overwrites a set's exercise and measurements; same body and
 // validation as AddSet.
-func (h *WorkoutHandler) UpdateSet(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	workoutID, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	setID, ok := pathID(w, r, "setID")
-	if !ok {
+func (h *WorkoutHandler) UpdateSet(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri setURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req setRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 	if req.ExerciseID == uuid.Nil {
-		writeError(w, http.StatusBadRequest, "exercise_id is required")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exercise_id is required"})
 		return
 	}
-	set, err := h.svc.UpdateSet(r.Context(), userID, workoutID, setID, req.ExerciseID, req.input())
+	set, err := h.svc.UpdateSet(c.Request.Context(), userID, uri.ID, uri.SetID, req.ExerciseID, req.input())
 	if err != nil {
-		writeLookupError(w, err, "set or exercise")
+		_ = c.Error(err).SetMeta("set or exercise")
 		return
 	}
-	writeJSON(w, http.StatusOK, set)
+	c.JSON(http.StatusOK, set)
 }
 
-func (h *WorkoutHandler) DeleteSet(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *WorkoutHandler) DeleteSet(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri setURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	workoutID, ok := pathID(w, r, "id")
-	if !ok {
+	if err := h.svc.DeleteSet(c.Request.Context(), userID, uri.ID, uri.SetID); err != nil {
+		_ = c.Error(err).SetMeta("set")
 		return
 	}
-	setID, ok := pathID(w, r, "setID")
-	if !ok {
-		return
-	}
-	if err := h.svc.DeleteSet(r.Context(), userID, workoutID, setID); err != nil {
-		writeLookupError(w, err, "set")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
