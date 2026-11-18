@@ -2,12 +2,11 @@ package repo
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Uranury/oci-platform/internal/models"
+	"github.com/Uranury/oci-platform/internal/repo/dbgen"
 	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 type Workout interface {
@@ -19,82 +18,63 @@ type Workout interface {
 }
 
 type workout struct {
-	exec dbutil.Executor
+	q *dbgen.Queries
 }
 
 func NewWorkout(exec dbutil.Executor) Workout {
-	return &workout{exec: exec}
+	return &workout{q: dbgen.New(exec)}
 }
 
-const workoutColumns = `id, user_id, name, notes, performed_at, created_at, updated_at`
-
-func scanWorkout(row pgx.Row, m *models.Workout) error {
-	return row.Scan(&m.ID, &m.UserID, &m.Name, &m.Notes, &m.PerformedAt, &m.CreatedAt, &m.UpdatedAt)
+func toWorkout(r dbgen.Workout) models.Workout {
+	return models.Workout{
+		ID: r.ID, UserID: r.UserID, Name: r.Name, Notes: r.Notes, PerformedAt: r.PerformedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
 }
 
 func (r *workout) Create(ctx context.Context, m *models.Workout) error {
-	return r.exec.QueryRow(ctx,
-		`INSERT INTO workouts (user_id, name, notes, performed_at)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, created_at, updated_at`,
-		m.UserID, m.Name, m.Notes, m.PerformedAt,
-	).Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
+	row, err := r.q.CreateWorkout(ctx, dbgen.CreateWorkoutParams{
+		UserID: m.UserID, Name: m.Name, Notes: m.Notes, PerformedAt: m.PerformedAt,
+	})
+	if err != nil {
+		return translate(err)
+	}
+	*m = toWorkout(row)
+	return nil
 }
 
 func (r *workout) GetByID(ctx context.Context, id uuid.UUID) (*models.Workout, error) {
-	var m models.Workout
-	err := scanWorkout(r.exec.QueryRow(ctx,
-		`SELECT `+workoutColumns+` FROM workouts WHERE id = $1`, id), &m)
+	row, err := r.q.GetWorkout(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+		return nil, translate(err)
 	}
-	return &m, nil
+	w := toWorkout(row)
+	return &w, nil
 }
 
 func (r *workout) ListByUser(ctx context.Context, userID uuid.UUID) ([]models.Workout, error) {
-	rows, err := r.exec.Query(ctx,
-		`SELECT `+workoutColumns+` FROM workouts
-		 WHERE user_id = $1 ORDER BY performed_at DESC`, userID,
-	)
+	rows, err := r.q.ListWorkoutsByUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, translate(err)
 	}
-	defer rows.Close()
-
-	var out []models.Workout
-	for rows.Next() {
-		var m models.Workout
-		if err := scanWorkout(rows, &m); err != nil {
-			return nil, err
-		}
-		out = append(out, m)
+	out := make([]models.Workout, len(rows))
+	for i, row := range rows {
+		out[i] = toWorkout(row)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (r *workout) Update(ctx context.Context, m *models.Workout) error {
-	err := r.exec.QueryRow(ctx,
-		`UPDATE workouts SET name = $1, notes = $2, performed_at = $3, updated_at = now()
-		 WHERE id = $4 AND user_id = $5
-		 RETURNING updated_at`,
-		m.Name, m.Notes, m.PerformedAt, m.ID, m.UserID,
-	).Scan(&m.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
+	updatedAt, err := r.q.UpdateWorkout(ctx, dbgen.UpdateWorkoutParams{
+		ID: m.ID, UserID: m.UserID, Name: m.Name, Notes: m.Notes, PerformedAt: m.PerformedAt,
+	})
+	if err != nil {
+		return translate(err)
 	}
-	return err
+	m.UpdatedAt = updatedAt
+	return nil
 }
 
 func (r *workout) Delete(ctx context.Context, id uuid.UUID) error {
-	tag, err := r.exec.Exec(ctx, "DELETE FROM workouts WHERE id = $1", id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return affected(r.q.DeleteWorkout(ctx, id))
 }

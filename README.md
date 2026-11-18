@@ -63,7 +63,14 @@ golangci-lint run ./...
 go test ./...
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above on every push and PR to `master`.
+Queries live in `internal/repo/queries/*.sql`; after editing one (or adding a migration) regenerate the typed Go code and commit it:
+
+```bash
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1   # once
+sqlc generate
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above on every push and PR to `master`, plus `sqlc diff` (fails if generated code is stale), ansible-lint, and a linux/arm64 release build. Every green push to `master` is tagged with the next version (`feat:` → minor, `fix:`/other → patch, `type!:` / `BREAKING CHANGE` → major), so deploys are named after the tag.
 
 ## Project layout
 

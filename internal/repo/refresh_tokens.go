@@ -2,13 +2,12 @@ package repo
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/Uranury/oci-platform/internal/models"
+	"github.com/Uranury/oci-platform/internal/repo/dbgen"
 	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 type RefreshToken interface {
@@ -19,52 +18,42 @@ type RefreshToken interface {
 }
 
 type refreshToken struct {
-	exec dbutil.Executor
+	q *dbgen.Queries
 }
 
 func NewRefreshToken(exec dbutil.Executor) RefreshToken {
-	return &refreshToken{exec: exec}
+	return &refreshToken{q: dbgen.New(exec)}
+}
+
+func toRefreshToken(r dbgen.RefreshToken) *models.RefreshToken {
+	return &models.RefreshToken{
+		ID: r.ID, UserID: r.UserID, TokenHash: r.TokenHash,
+		ExpiresAt: r.ExpiresAt, RevokedAt: r.RevokedAt, CreatedAt: r.CreatedAt,
+	}
 }
 
 func (r *refreshToken) Create(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) (*models.RefreshToken, error) {
-	m := &models.RefreshToken{
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: expiresAt,
-	}
-	err := r.exec.QueryRow(ctx,
-		`INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, created_at`,
-		userID, tokenHash, expiresAt,
-	).Scan(&m.ID, &m.CreatedAt)
+	row, err := r.q.CreateRefreshToken(ctx, dbgen.CreateRefreshTokenParams{
+		UserID: userID, TokenHash: tokenHash, ExpiresAt: expiresAt,
+	})
 	if err != nil {
-		return nil, err
+		return nil, translate(err)
 	}
-	return m, nil
+	return toRefreshToken(row), nil
 }
 
 func (r *refreshToken) GetByHash(ctx context.Context, tokenHash string) (*models.RefreshToken, error) {
-	var m models.RefreshToken
-	err := r.exec.QueryRow(ctx,
-		`SELECT id, user_id, token_hash, expires_at, revoked_at, created_at
-		 FROM refresh_tokens WHERE token_hash = $1`, tokenHash,
-	).Scan(&m.ID, &m.UserID, &m.TokenHash, &m.ExpiresAt, &m.RevokedAt, &m.CreatedAt)
+	row, err := r.q.GetRefreshTokenByHash(ctx, tokenHash)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+		return nil, translate(err)
 	}
-	return &m, nil
+	return toRefreshToken(row), nil
 }
 
 func (r *refreshToken) Revoke(ctx context.Context, id uuid.UUID) error {
-	_, err := r.exec.Exec(ctx, "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL", id)
-	return err
+	return translate(r.q.RevokeRefreshToken(ctx, id))
 }
 
 func (r *refreshToken) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
-	_, err := r.exec.Exec(ctx, "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL", userID)
-	return err
+	return translate(r.q.RevokeAllRefreshTokensForUser(ctx, userID))
 }
