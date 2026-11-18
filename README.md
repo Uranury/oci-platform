@@ -63,6 +63,13 @@ golangci-lint run ./...
 go test ./...
 ```
 
+The repo, service and handler tests need a real Postgres; without one they're skipped. Point them at the local dev database (each test creates and drops its own database there, cloned from a migrated template, so your dev data isn't touched):
+
+```bash
+docker compose -f local/compose.yaml up -d db
+TEST_DATABASE_URL='postgres://liftlog:liftlog@localhost:5433/postgres?sslmode=disable' go test ./...
+```
+
 Queries live in `internal/repo/queries/*.sql`; after editing one (or adding a migration) regenerate the typed Go code and commit it:
 
 ```bash

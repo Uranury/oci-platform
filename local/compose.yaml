@@ -7,6 +7,8 @@
 # App: http://localhost:8080 (APP_PORT). Postgres is published on 5433
 # (DB_PORT), not 5432, so it doesn't clash with a Postgres already running
 # on the machine: psql postgres://liftlog:liftlog@localhost:5433/liftlog
+# The same server runs the DB-backed Go tests (each in its own throwaway
+# database): TEST_DATABASE_URL=postgres://liftlog:liftlog@localhost:5433/postgres?sslmode=disable go test ./...
 #
 # Dev-only credentials and secret below; never reuse them anywhere real.
 
