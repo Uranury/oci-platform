@@ -15,7 +15,7 @@ import (
 const createWorkout = `-- name: CreateWorkout :one
 INSERT INTO workouts (user_id, name, notes, performed_at, template_id)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, name, notes, performed_at, created_at, updated_at, template_id
+RETURNING id, user_id, name, notes, performed_at, created_at, updated_at, template_id, finished_at
 `
 
 type CreateWorkoutParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CreateWorkout(ctx context.Context, arg CreateWorkoutParams) (W
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.TemplateID,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -61,7 +62,7 @@ func (q *Queries) DeleteWorkout(ctx context.Context, id uuid.UUID) (int64, error
 }
 
 const getWorkout = `-- name: GetWorkout :one
-SELECT id, user_id, name, notes, performed_at, created_at, updated_at, template_id FROM workouts WHERE id = $1
+SELECT id, user_id, name, notes, performed_at, created_at, updated_at, template_id, finished_at FROM workouts WHERE id = $1
 `
 
 func (q *Queries) GetWorkout(ctx context.Context, id uuid.UUID) (Workout, error) {
@@ -76,12 +77,13 @@ func (q *Queries) GetWorkout(ctx context.Context, id uuid.UUID) (Workout, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.TemplateID,
+		&i.FinishedAt,
 	)
 	return i, err
 }
 
 const listWorkoutsByUser = `-- name: ListWorkoutsByUser :many
-SELECT id, user_id, name, notes, performed_at, created_at, updated_at, template_id FROM workouts WHERE user_id = $1 ORDER BY performed_at DESC
+SELECT id, user_id, name, notes, performed_at, created_at, updated_at, template_id, finished_at FROM workouts WHERE user_id = $1 ORDER BY performed_at DESC
 `
 
 func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID uuid.UUID) ([]Workout, error) {
@@ -102,6 +104,7 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID uuid.UUID) ([]W
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.TemplateID,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -114,8 +117,9 @@ func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID uuid.UUID) ([]W
 }
 
 const updateWorkout = `-- name: UpdateWorkout :one
-UPDATE workouts SET name = $1, notes = $2, performed_at = $3, updated_at = now()
-WHERE id = $4 AND user_id = $5
+UPDATE workouts SET name = $1, notes = $2, performed_at = $3,
+    finished_at = $4, updated_at = now()
+WHERE id = $5 AND user_id = $6
 RETURNING updated_at
 `
 
@@ -123,6 +127,7 @@ type UpdateWorkoutParams struct {
 	Name        *string
 	Notes       *string
 	PerformedAt time.Time
+	FinishedAt  *time.Time
 	ID          uuid.UUID
 	UserID      uuid.UUID
 }
@@ -132,6 +137,7 @@ func (q *Queries) UpdateWorkout(ctx context.Context, arg UpdateWorkoutParams) (t
 		arg.Name,
 		arg.Notes,
 		arg.PerformedAt,
+		arg.FinishedAt,
 		arg.ID,
 		arg.UserID,
 	)

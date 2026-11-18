@@ -67,6 +67,7 @@ type Workout struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	TemplateID  *uuid.UUID
+	FinishedAt  *time.Time
 }
 
 type WorkoutSet struct {

@@ -88,6 +88,9 @@ type Workout struct {
 	// TemplateID is the template the workout was started from, if any (nil
 	// also once that template is deleted).
 	TemplateID *uuid.UUID `json:"template_id,omitempty" db:"template_id"`
+	// FinishedAt is when the workout was finished; nil while in progress
+	// or when unknown (logged after the fact). Never before PerformedAt.
+	FinishedAt *time.Time `json:"finished_at,omitempty" db:"finished_at"`
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`

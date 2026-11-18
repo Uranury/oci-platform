@@ -13,6 +13,9 @@ type WorkoutSet interface {
 	Create(ctx context.Context, s *models.WorkoutSet) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.WorkoutSet, error)
 	ListByWorkout(ctx context.Context, workoutID uuid.UUID) ([]models.WorkoutSet, error)
+	// Update overwrites the exercise and measurements of set s.ID within
+	// workout s.WorkoutID; ErrNotFound if the set isn't in that workout.
+	Update(ctx context.Context, s *models.WorkoutSet) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -68,6 +71,22 @@ func (r *workoutSet) ListByWorkout(ctx context.Context, workoutID uuid.UUID) ([]
 		out[i] = toWorkoutSet(row.WorkoutSet, row.ExerciseName, row.ExerciseTrackingType)
 	}
 	return out, nil
+}
+
+func (r *workoutSet) Update(ctx context.Context, m *models.WorkoutSet) error {
+	row, err := r.q.UpdateWorkoutSet(ctx, dbgen.UpdateWorkoutSetParams{
+		ID: m.ID, WorkoutID: m.WorkoutID, ExerciseID: m.ExerciseID,
+		Reps: m.Reps, WeightKg: m.WeightKg, DurationSeconds: m.DurationSeconds, DistanceM: m.DistanceM,
+	})
+	if err != nil {
+		return translate(err)
+	}
+	*m = toWorkoutSet(dbgen.WorkoutSet{
+		ID: row.ID, WorkoutID: row.WorkoutID, ExerciseID: row.ExerciseID,
+		Reps: row.Reps, WeightKg: row.WeightKg, DurationSeconds: row.DurationSeconds, DistanceM: row.DistanceM,
+		CreatedAt: row.CreatedAt,
+	}, row.ExerciseName, row.ExerciseTrackingType)
+	return nil
 }
 
 func (r *workoutSet) Delete(ctx context.Context, id uuid.UUID) error {
