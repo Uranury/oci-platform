@@ -9,6 +9,8 @@ RETURNING *;
 -- name: GetTemplate :one
 SELECT * FROM workout_templates WHERE id = @id AND user_id = @owner_id;
 
+-- Name order here; repo.Template.List re-sorts by last use (the last-used
+-- times come from ListTemplateLastUsed).
 -- name: ListTemplates :many
 SELECT sqlc.embed(t),
     (SELECT count(*) FROM template_exercises te WHERE te.template_id = t.id)::int AS exercise_count

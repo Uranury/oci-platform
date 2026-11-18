@@ -3,6 +3,7 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/Uranury/oci-platform/internal/testdb"
 	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestMain(m *testing.M) { testdb.Main(m) }
@@ -31,6 +33,12 @@ type client struct {
 
 func newServer(t *testing.T) http.Handler {
 	t.Helper()
+	h, _ := newServerWithPool(t)
+	return h
+}
+
+func newServerWithPool(t *testing.T) (http.Handler, *pgxpool.Pool) {
+	t.Helper()
 	pool := testdb.New(t)
 	exercises, workouts, sets := repo.NewExercise(pool), repo.NewWorkout(pool), repo.NewWorkoutSet(pool)
 	tx := dbutil.NewTxProvider(pool)
@@ -42,7 +50,7 @@ func newServer(t *testing.T) http.Handler {
 		handler.NewTemplateHandler(service.NewTemplateService(tx, repo.NewTemplate(pool), exercises, workouts, sets)),
 		jwt,
 		fstest.MapFS{"index.html": {Data: []byte("<html>")}},
-	)
+	), pool
 }
 
 // signUp registers and logs in a new user.
@@ -239,5 +247,38 @@ func TestAuthRequired(t *testing.T) {
 	// Public routes stay public.
 	if code, _ := anon.do("GET", "/exercise-options", nil); code != http.StatusOK {
 		t.Errorf("GET /exercise-options: got %d, want 200", code)
+	}
+}
+
+// A 5xx response hides the cause from the client but logs it. Not parallel:
+// it swaps the global logger.
+func TestServerErrorsAreLogged(t *testing.T) {
+	h, pool := newServerWithPool(t)
+	alice := signUp(t, h)
+	var w idOnly
+	alice.must(http.StatusCreated, "POST", "/workouts", map[string]any{}, &w)
+
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	pool.Close() // every query now fails
+
+	for _, path := range []string{
+		"/workouts",         // handler answers the 500 itself
+		"/workouts/" + w.ID, // 500 from handleErrors' fallback
+	} {
+		logs.Reset()
+		code, body := alice.do("GET", path, nil)
+		if code != http.StatusInternalServerError {
+			t.Fatalf("GET %s: got %d, want 500", path, code)
+		}
+		if strings.Contains(string(body), "closed") {
+			t.Errorf("GET %s: response leaks the cause: %s", path, body)
+		}
+		line := logs.String()
+		if !strings.Contains(line, "level=ERROR") || !strings.Contains(line, "err=") || !strings.Contains(line, "closed pool") {
+			t.Errorf("GET %s: log line lacks the error: %q", path, line)
+		}
 	}
 }

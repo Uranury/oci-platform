@@ -14,7 +14,7 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	gin.SetMode(gin.ReleaseMode) // no [GIN-debug] route dump on stdout; logging goes through slog
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
-	r.Use(logRequests, gin.Recovery(), handleErrors)
+	r.Use(logRequests, gin.CustomRecovery(recoverPanic), handleErrors)
 
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "Hello, you found me!\n") })
 

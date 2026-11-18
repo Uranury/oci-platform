@@ -225,6 +225,8 @@ type ListTemplatesRow struct {
 	ExerciseCount   int
 }
 
+// Name order here; repo.Template.List re-sorts by last use (the last-used
+// times come from ListTemplateLastUsed).
 func (q *Queries) ListTemplates(ctx context.Context, ownerID uuid.UUID) ([]ListTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listTemplates, ownerID)
 	if err != nil {

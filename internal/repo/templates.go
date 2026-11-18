@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"slices"
 
 	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/repo/dbgen"
@@ -16,6 +17,8 @@ import (
 type Template interface {
 	Create(ctx context.Context, t *models.Template) error
 	Get(ctx context.Context, ownerID, id uuid.UUID) (*models.Template, error)
+	// List returns the owner's templates, most due first: never done, then
+	// by last use, oldest first; ties by name.
 	List(ctx context.Context, ownerID uuid.UUID) ([]models.TemplateSummary, error)
 	// Update overwrites name and notes of a template owned by t.UserID.
 	Update(ctx context.Context, t *models.Template) error
@@ -83,6 +86,19 @@ func (r *template) List(ctx context.Context, ownerID uuid.UUID) ([]models.Templa
 			s.LastUsedAt = &u.LastUsedAt
 		}
 	}
+	// Most due first: never done, then the one done longest ago. Stable, so
+	// ties keep the query's name order.
+	slices.SortStableFunc(out, func(a, b models.TemplateSummary) int {
+		switch {
+		case a.LastUsedAt == nil && b.LastUsedAt == nil:
+			return 0
+		case a.LastUsedAt == nil:
+			return -1
+		case b.LastUsedAt == nil:
+			return 1
+		}
+		return a.LastUsedAt.Compare(*b.LastUsedAt)
+	})
 	return out, nil
 }
 

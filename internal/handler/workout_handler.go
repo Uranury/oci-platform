@@ -56,6 +56,7 @@ func (h *WorkoutHandler) CreateWorkout(c *gin.Context) {
 	}
 	wo, err := h.svc.CreateWorkout(c.Request.Context(), userID, emptyToNil(req.Name), emptyToNil(req.Notes), req.performedAt())
 	if err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create workout"})
 		return
 	}
@@ -66,6 +67,7 @@ func (h *WorkoutHandler) ListWorkouts(c *gin.Context) {
 	userID := c.MustGet(userIDKey).(uuid.UUID)
 	list, err := h.svc.ListWorkouts(c.Request.Context(), userID)
 	if err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list workouts"})
 		return
 	}

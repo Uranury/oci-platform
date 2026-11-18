@@ -3,9 +3,11 @@ package repo_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/repo"
 	"github.com/Uranury/oci-platform/internal/testdb"
 	"github.com/google/uuid"
@@ -183,4 +185,46 @@ func TestListPrevious(t *testing.T) {
 	t.Run("nothing earlier", func(t *testing.T) {
 		check(t, w10.PerformedAt, w10.ID, map[uuid.UUID]want{})
 	})
+}
+
+func TestTemplatesListMostDueFirst(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pool := testdb.New(t)
+	alice := testdb.User(t, pool)
+	templates, workouts := repo.NewTemplate(pool), repo.NewWorkout(pool)
+	now := time.Now()
+
+	// lastUsed: days ago; -1 = never done.
+	for _, tc := range []struct {
+		name     string
+		lastUsed int
+	}{{"A recent", 1}, {"B never", -1}, {"C old", 30}, {"D never", -1}, {"E middle", 7}} {
+		tp := &models.Template{UserID: alice, Name: tc.name}
+		if err := templates.Create(ctx, tp); err != nil {
+			t.Fatal(err)
+		}
+		if tc.lastUsed >= 0 {
+			// An earlier use too, so it's the latest use that counts.
+			for _, d := range []int{tc.lastUsed + 60, tc.lastUsed} {
+				w := &models.Workout{UserID: alice, TemplateID: &tp.ID, PerformedAt: now.Add(-time.Duration(d) * 24 * time.Hour)}
+				if err := workouts.Create(ctx, w); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+
+	list, err := templates.List(ctx, alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, tp := range list {
+		got = append(got, tp.Name)
+	}
+	want := []string{"B never", "D never", "C old", "E middle", "A recent"}
+	if !slices.Equal(got, want) {
+		t.Errorf("order = %v, want %v", got, want)
+	}
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -82,20 +83,32 @@ func handleErrors(c *gin.Context) {
 // logRequests logs every request at DEBUG and every 5xx at ERROR. In
 // production (LOG_LEVEL=info) only the 5xx lines show; nginx already keeps
 // the access log there. Query strings are left out: they could carry user
-// input, and the path is enough to find the handler.
+// input, and the path is enough to find the handler. A 5xx line carries the
+// error the handler attached with c.Error, which the client never sees.
 func logRequests(c *gin.Context) {
 	start := time.Now()
 	c.Next()
 	status := c.Writer.Status()
-	level := slog.LevelDebug
-	if status >= http.StatusInternalServerError {
-		level = slog.LevelError
-	}
-	slog.Log(c.Request.Context(), level, "request",
+	attrs := []any{
 		"method", c.Request.Method,
 		"path", c.Request.URL.Path,
 		"status", status,
 		"bytes", max(c.Writer.Size(), 0),
 		"duration", time.Since(start).Round(time.Microsecond),
-	)
+	}
+	level := slog.LevelDebug
+	if status >= http.StatusInternalServerError {
+		level = slog.LevelError
+		if last := c.Errors.Last(); last != nil {
+			attrs = append(attrs, "err", last.Err)
+		}
+	}
+	slog.Log(c.Request.Context(), level, "request", attrs...)
+}
+
+// recoverPanic turns a handler panic into a 500 whose request log line
+// names the panic. Gin still prints the stack trace to stderr first.
+func recoverPanic(c *gin.Context, rec any) {
+	_ = c.Error(fmt.Errorf("panic: %v", rec))
+	c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 }

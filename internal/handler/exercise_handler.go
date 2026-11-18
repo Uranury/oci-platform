@@ -52,6 +52,7 @@ func (h *ExerciseHandler) List(c *gin.Context) {
 	userID := c.MustGet(userIDKey).(uuid.UUID)
 	list, err := h.svc.List(c.Request.Context(), userID)
 	if err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list exercises"})
 		return
 	}
@@ -158,6 +159,7 @@ func (h *ExerciseHandler) Similar(c *gin.Context) {
 	}
 	list, err := h.svc.SimilarDefaults(c.Request.Context(), name)
 	if err != nil {
+		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check names"})
 		return
 	}
