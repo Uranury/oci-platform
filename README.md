@@ -1,6 +1,6 @@
 # oci-platform
 
-A small Go REST API for managing todo tasks, with JWT-based auth and refresh-token rotation. Built as the application layer for a Linux/DevOps coursework project (3-tier deploy: Nginx → this API → Postgres).
+Lift Log: a small workout tracker (log workouts, exercises and sets) as a Go REST API plus an embedded web frontend, with JWT-based auth and refresh-token rotation. Built as the application layer for a Linux/DevOps coursework project (3-tier deploy: Nginx → this API → Postgres).
 
 ## Stack
 
@@ -21,7 +21,7 @@ go run ./cmd/app
 
 Required: `DATABASE_URL`, `JWT_SECRET`. Everything else has a default — see `.env.example`.
 
-Schema migrations run automatically on startup; nothing to apply by hand.
+Schema migrations run automatically on startup; nothing to apply by hand. Open `http://localhost:8080/` for the web app.
 
 ## API
 
@@ -34,11 +34,17 @@ All request/response bodies are JSON.
 | POST   | `/auth/refresh`   | –    | Rotate a refresh token for a new pair |
 | POST   | `/auth/logout`    | –    | Revoke one refresh token              |
 | POST   | `/auth/logout-all`| Bearer | Revoke every refresh token for the user ("log out everywhere") |
-| POST   | `/tasks`          | Bearer | Create a task                       |
-| GET    | `/tasks`          | Bearer | List your tasks                     |
-| GET    | `/tasks/{id}`     | Bearer | Get one task                        |
-| PUT    | `/tasks/{id}`     | Bearer | Update a task                       |
-| DELETE | `/tasks/{id}`     | Bearer | Delete a task                       |
+| GET    | `/exercises`      | Bearer | List your exercises                 |
+| POST   | `/exercises`      | Bearer | Create an exercise (`{"name"}`; 409 if the name exists) |
+| DELETE | `/exercises/{id}` | Bearer | Delete an exercise (409 while it has logged sets) |
+| GET    | `/workouts`       | Bearer | List your workouts, newest first    |
+| POST   | `/workouts`       | Bearer | Start a workout (`{"name"?, "notes"?, "performed_at"?}`; date defaults to now) |
+| GET    | `/workouts/{id}`  | Bearer | Get a workout with its sets         |
+| PUT    | `/workouts/{id}`  | Bearer | Update name, notes, date            |
+| DELETE | `/workouts/{id}`  | Bearer | Delete a workout and its sets       |
+| POST   | `/workouts/{id}/sets` | Bearer | Log a set (`{"exercise_id", "reps", "weight_kg"}`) |
+| DELETE | `/workouts/{id}/sets/{setID}` | Bearer | Delete a set               |
+| GET    | `/` (and static files) | – | The web frontend (`web/static`) |
 | GET    | `/healthz`        | –    | Liveness check                        |
 
 "Bearer" routes require `Authorization: Bearer <access_token>`. Access tokens are short-lived (`ACCESS_TOKEN_TTL`, default 15m); use `/auth/refresh` with the refresh token to get a new pair.

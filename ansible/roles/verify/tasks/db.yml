@@ -91,5 +91,5 @@
 
 - name: "Backup: the restored copy has the application tables"
   ansible.builtin.assert:
-    that: "['users', 'tasks', 'refresh_tokens'] | difference(verify_restore.stdout_lines) | length == 0"
+    that: "['users', 'refresh_tokens', 'exercises', 'workouts', 'workout_sets'] | difference(verify_restore.stdout_lines) | length == 0"
     success_msg: "restored tables: {{ verify_restore.stdout_lines | join(', ') }}"

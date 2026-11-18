@@ -17,6 +17,7 @@ import (
 	"github.com/Uranury/oci-platform/internal/repo"
 	"github.com/Uranury/oci-platform/internal/service"
 	"github.com/Uranury/oci-platform/pkg/dbutil"
+	"github.com/Uranury/oci-platform/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -50,19 +51,26 @@ func run() error {
 	}
 
 	userRepo := repo.NewUser(pool)
-	taskRepo := repo.NewTask(pool)
 	refreshTokenRepo := repo.NewRefreshToken(pool)
+	exerciseRepo := repo.NewExercise(pool)
+	workoutRepo := repo.NewWorkout(pool)
+	workoutSetRepo := repo.NewWorkoutSet(pool)
 	txProvider := dbutil.NewTxProvider(pool)
 
 	jwtIssuer := auth.NewJWTIssuer(cfg.JWTSecret, cfg.AccessTokenTTL)
 
 	authService := service.NewAuthService(userRepo, refreshTokenRepo, txProvider, jwtIssuer, cfg.RefreshTokenTTL)
-	taskService := service.NewTaskService(taskRepo)
+	workoutService := service.NewWorkoutService(exerciseRepo, workoutRepo, workoutSetRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
-	taskHandler := handler.NewTaskHandler(taskService)
+	workoutHandler := handler.NewWorkoutHandler(workoutService)
 
-	router := handler.NewRouter(authHandler, taskHandler, jwtIssuer)
+	webFS, err := web.Static()
+	if err != nil {
+		return err
+	}
+
+	router := handler.NewRouter(authHandler, workoutHandler, jwtIssuer, webFS)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.ListenHost, cfg.Port),
