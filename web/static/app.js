@@ -374,6 +374,23 @@ function fmtTarget(t, done) {
   return out.join(" · ");
 }
 
+// "3 × 10 @ 60 kg" when every set was the same, else each set in order.
+function fmtSets(sets) {
+  const f = sets.map(fmtSet);
+  if (!f.every((x) => x === f[0])) return f.join(", ");
+  const s = sets[0];
+  if (sets.length === 1) return f[0];
+  if (s.exercise_tracking_type === "weight_reps" && s.reps != null && s.weight_kg != null) {
+    return `${sets.length} × ${s.reps} @ ${fmtWeight(s.weight_kg)} kg`;
+  }
+  return `${sets.length} × ${f[0]}`;
+}
+
+// "Last time (3 days ago): 3 × 10 @ 60 kg".
+function fmtPrevious(p) {
+  return `Last time (${fmtAgo(p.performed_at)}): ${fmtSets(p.sets)}`;
+}
+
 function select(list, value, { placeholder, required } = {}) {
   return h("select", { required },
     placeholder ? h("option", { value: "" }, placeholder) : null,
@@ -460,9 +477,18 @@ async function createExercise(body) {
 
 // ---------- views: single workout ----------
 
-// Remembered across renders (per exercise) so the next set is pre-filled.
-const lastByExercise = {};
+// The exercise last picked in the set form, kept across renders.
 let lastExerciseId = "";
+
+// A value this many times the largest one logged for the exercise (this
+// workout or last time) is probably a typo; asked about before saving.
+// min is how far above it must also be, so small numbers don't trip it.
+const SUSPICIOUS = {
+  weight_kg: { factor: 2, min: 20, unit: " kg", fmt: fmtWeight },
+  reps: { factor: 3, min: 10, unit: " reps", fmt: String },
+  distance_m: { factor: 3, min: 500, unit: " m", fmt: fmtWeight },
+  duration_seconds: { factor: 3, min: 120, unit: "", fmt: fmtDuration },
+};
 
 // Fields shown per tracking type; mirrors models.setRules on the server
 // (which is the one that enforces it).
@@ -487,12 +513,15 @@ function parseDuration(str) {
 // new one being logged.
 async function viewWorkout(id, { creatingExercise = false, editSetId = null } = {}) {
   if (!app.childElementCount) render(h("p.muted", {}, "Loading…"));
-  const [w, exercises, opts] = await Promise.all([
+  const [w, exercises, opts, previous] = await Promise.all([
     api("GET", "/workouts/" + id),
     api("GET", "/exercises"),
     getOptions(),
+    api("GET", `/workouts/${id}/previous`),
   ]);
   const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
+  // "Last time" per exercise: sets from the latest earlier workout with it.
+  const prevBy = Object.fromEntries(previous.map((p) => [p.exercise_id, p]));
   // The plan, if started from a template (gone if it was deleted since).
   const template = w.template_id
     ? await api("GET", "/templates/" + w.template_id).catch((e) => (e.status === 404 ? null : Promise.reject(e)))
@@ -529,20 +558,19 @@ async function viewWorkout(id, { creatingExercise = false, editSetId = null } = 
   for (const s of w.sets) {
     if (!groups.has(s.exercise_id)) groups.set(s.exercise_id, { name: s.exercise_name, sets: [] });
     groups.get(s.exercise_id).sets.push(s);
-    lastByExercise[s.exercise_id] = s;
   }
 
   // Planned exercises first, in template order (with progress and the
   // target), then anything logged that wasn't in the plan.
   const planned = new Set(plan.map((te) => te.exercise_id));
   const cards = [
-    ...plan.map((te) => ({ te, g: groups.get(te.exercise_id) || { name: te.exercise_name, sets: [] } })),
-    ...[...groups].filter(([exId]) => !planned.has(exId)).map(([, g]) => ({ g })),
+    ...plan.map((te) => ({ exId: te.exercise_id, te, g: groups.get(te.exercise_id) || { name: te.exercise_name, sets: [] } })),
+    ...[...groups].filter(([exId]) => !planned.has(exId)).map(([exId, g]) => ({ exId, g })),
   ];
   const doneOf = (exId) => (groups.get(exId) || { sets: [] }).sets.length;
   const editing = editSetId ? w.sets.find((s) => s.id === editSetId) : null;
 
-  const groupCards = cards.map(({ te, g }) =>
+  const groupCards = cards.map(({ exId, te, g }) =>
     h("div.card", {},
       h("div.card-head", {},
         h("h2", {}, g.name),
@@ -557,6 +585,7 @@ async function viewWorkout(id, { creatingExercise = false, editSetId = null } = 
       te ? h("p.muted.small.plan-meta", {},
         fmtTarget(te, g.sets.length) + (te.exercise_archived ? " · archived" : "")) : null,
       te && te.notes ? h("p.muted.small.plan-meta", {}, te.notes) : null,
+      prevBy[exId] ? h("p.muted.small.plan-meta", {}, fmtPrevious(prevBy[exId])) : null,
       h("ul.sets", {}, g.sets.map((s, i) =>
         h("li", { class: editing && s.id === editing.id ? "editing" : null },
           h("span.n", {}, i + 1),
@@ -631,17 +660,27 @@ async function viewWorkout(id, { creatingExercise = false, editSetId = null } = 
     if (prefer && byId[prefer]) exSelect.value = prefer;
 
     const fieldsBox = h("div.row");
+    const prevHint = h("p.hint");
     let inputs = {};
 
     function buildFields() {
       inputs = {};
       const ex = byId[exSelect.value];
+      const last = ex && prevBy[ex.id];
+      prevHint.textContent = last ? fmtPrevious(last) : "";
+      prevHint.hidden = !last;
       if (!ex) { fieldsBox.replaceChildren(); return; }
       const te = plan.find((p) => p.exercise_id === ex.id);
-      const prev = editing && editing.exercise_id === ex.id ? editing : lastByExercise[ex.id] || (te ? {
-        reps: te.target_reps_min,
-        duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
-      } : {});
+      // Pre-fill from: the set being edited, else this workout's latest set
+      // of the exercise, else the first set last time, else the plan target.
+      const logged = (groups.get(ex.id) || { sets: [] }).sets;
+      const prev = (editing && editing.exercise_id === ex.id ? editing : null)
+        || logged[logged.length - 1]
+        || (last && last.sets[0])
+        || (te ? {
+          reps: te.target_reps_min,
+          duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
+        } : {});
       fieldsBox.replaceChildren(...SET_FIELDS[ex.tracking_type].map(([key, label, required]) => {
         let input;
         if (key === "duration") {
@@ -682,6 +721,8 @@ async function viewWorkout(id, { creatingExercise = false, editSetId = null } = 
           duration_seconds: num("duration", parseDuration),
           distance_m: num("distance_m", parseFloat),
         };
+        const odd = suspicious(ex.id, body);
+        if (odd && !confirm(odd + " Save anyway?")) return;
         addBtn.disabled = true;
         try {
           if (editing) {
@@ -700,12 +741,33 @@ async function viewWorkout(id, { creatingExercise = false, editSetId = null } = 
     },
       editing ? h("h2", {}, "Edit set") : null,
       field("Exercise", exSelect),
+      prevHint,
       fieldsBox,
       editing
         ? h("div.row", {},
             h("button", { type: "button", onclick: () => viewWorkout(id).catch(fail) }, "Cancel"),
             addBtn)
         : addBtn);
+
+    // A warning like "1000 kg? Last time your most was 100 kg." when a value
+    // is far above anything logged for the exercise, else null.
+    function suspicious(exId, body) {
+      const last = prevBy[exId];
+      const history = [
+        ...(groups.get(exId) || { sets: [] }).sets.filter((s) => !editing || s.id !== editing.id),
+        ...(last ? last.sets : []),
+      ];
+      for (const [key, r] of Object.entries(SUSPICIOUS)) {
+        const v = body[key];
+        const seen = history.map((s) => s[key]).filter((x) => x != null && x > 0);
+        if (v == null || !seen.length) continue;
+        const most = Math.max(...seen);
+        if (v > most * r.factor && v - most >= r.min) {
+          return `${r.fmt(v)}${r.unit}? Your most for this exercise recently was ${r.fmt(most)}${r.unit}.`;
+        }
+      }
+      return null;
+    }
 
     // Called by a plan card's "Log" button.
     form.pick = (exId) => {

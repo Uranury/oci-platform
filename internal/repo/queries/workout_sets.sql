@@ -36,3 +36,21 @@ FROM updated u JOIN exercises e ON e.id = u.exercise_id;
 
 -- name: DeleteWorkoutSet :execrows
 DELETE FROM workout_sets WHERE id = @id;
+
+-- For each exercise, the sets from the user's most recent workout before
+-- @before that included it ("last time"), excluding @exclude_workout_id.
+-- Archived exercises are kept so their history still reads right.
+-- name: ListPreviousSets :many
+WITH latest AS (
+    SELECT DISTINCT ON (s.exercise_id) s.exercise_id, w.id AS workout_id
+    FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+    WHERE w.user_id = @user_id AND w.id <> @exclude_workout_id AND w.performed_at < @before
+    ORDER BY s.exercise_id, w.performed_at DESC, w.id
+)
+SELECT sqlc.embed(s), e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    w.performed_at AS workout_performed_at
+FROM latest l
+JOIN workout_sets s ON s.exercise_id = l.exercise_id AND s.workout_id = l.workout_id
+JOIN exercises e ON e.id = s.exercise_id
+JOIN workouts w ON w.id = s.workout_id
+ORDER BY s.exercise_id, s.created_at;

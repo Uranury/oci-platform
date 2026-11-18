@@ -115,6 +115,70 @@ func (q *Queries) GetWorkoutSet(ctx context.Context, id uuid.UUID) (GetWorkoutSe
 	return i, err
 }
 
+const listPreviousSets = `-- name: ListPreviousSets :many
+WITH latest AS (
+    SELECT DISTINCT ON (s.exercise_id) s.exercise_id, w.id AS workout_id
+    FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+    WHERE w.user_id = $1 AND w.id <> $2 AND w.performed_at < $3
+    ORDER BY s.exercise_id, w.performed_at DESC, w.id
+)
+SELECT s.id, s.workout_id, s.exercise_id, s.reps, s.weight_kg, s.created_at, s.duration_seconds, s.distance_m, e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    w.performed_at AS workout_performed_at
+FROM latest l
+JOIN workout_sets s ON s.exercise_id = l.exercise_id AND s.workout_id = l.workout_id
+JOIN exercises e ON e.id = s.exercise_id
+JOIN workouts w ON w.id = s.workout_id
+ORDER BY s.exercise_id, s.created_at
+`
+
+type ListPreviousSetsParams struct {
+	UserID           uuid.UUID
+	ExcludeWorkoutID uuid.UUID
+	Before           time.Time
+}
+
+type ListPreviousSetsRow struct {
+	WorkoutSet           WorkoutSet
+	ExerciseName         string
+	ExerciseTrackingType models.TrackingType
+	WorkoutPerformedAt   time.Time
+}
+
+// For each exercise, the sets from the user's most recent workout before
+// @before that included it ("last time"), excluding @exclude_workout_id.
+// Archived exercises are kept so their history still reads right.
+func (q *Queries) ListPreviousSets(ctx context.Context, arg ListPreviousSetsParams) ([]ListPreviousSetsRow, error) {
+	rows, err := q.db.Query(ctx, listPreviousSets, arg.UserID, arg.ExcludeWorkoutID, arg.Before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPreviousSetsRow{}
+	for rows.Next() {
+		var i ListPreviousSetsRow
+		if err := rows.Scan(
+			&i.WorkoutSet.ID,
+			&i.WorkoutSet.WorkoutID,
+			&i.WorkoutSet.ExerciseID,
+			&i.WorkoutSet.Reps,
+			&i.WorkoutSet.WeightKg,
+			&i.WorkoutSet.CreatedAt,
+			&i.WorkoutSet.DurationSeconds,
+			&i.WorkoutSet.DistanceM,
+			&i.ExerciseName,
+			&i.ExerciseTrackingType,
+			&i.WorkoutPerformedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkoutSets = `-- name: ListWorkoutSets :many
 SELECT s.id, s.workout_id, s.exercise_id, s.reps, s.weight_kg, s.created_at, s.duration_seconds, s.distance_m, e.name AS exercise_name, e.tracking_type AS exercise_tracking_type
 FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
