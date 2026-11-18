@@ -141,6 +141,23 @@ func (h *WorkoutHandler) FinishWorkout(c *gin.Context) {
 	c.JSON(http.StatusOK, wo)
 }
 
+// PreviousSets is "last time": per exercise, the sets from the most recent
+// earlier workout that included it.
+func (h *WorkoutHandler) PreviousSets(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	prev, err := h.svc.PreviousSets(c.Request.Context(), userID, uri.ID)
+	if err != nil {
+		_ = c.Error(err).SetMeta("workout")
+		return
+	}
+	c.JSON(http.StatusOK, prev)
+}
+
 // --- sets ---
 
 type setRequest struct {

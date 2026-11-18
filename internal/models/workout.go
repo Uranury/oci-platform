@@ -175,3 +175,12 @@ type WorkoutDetail struct {
 	Workout
 	Sets []WorkoutSet `json:"sets"`
 }
+
+// PreviousSession is "last time" for one exercise: its sets from the most
+// recent earlier workout that included it.
+type PreviousSession struct {
+	ExerciseID  uuid.UUID    `json:"exercise_id"`
+	WorkoutID   uuid.UUID    `json:"workout_id"`
+	PerformedAt time.Time    `json:"performed_at"`
+	Sets        []WorkoutSet `json:"sets"`
+}

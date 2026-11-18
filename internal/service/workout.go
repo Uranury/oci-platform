@@ -72,6 +72,18 @@ func (s *WorkoutService) GetWorkout(ctx context.Context, userID, id uuid.UUID) (
 	return &models.WorkoutDetail{Workout: *w, Sets: sets}, nil
 }
 
+// PreviousSets returns "last time" for every exercise: the sets from the
+// most recent workout dated before this one that included it. Relative to
+// this workout's date, so reopening an old workout shows what came before
+// it, not what came after.
+func (s *WorkoutService) PreviousSets(ctx context.Context, userID, id uuid.UUID) ([]models.PreviousSession, error) {
+	w, err := s.getWorkout(ctx, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.sets.ListPrevious(ctx, userID, id, w.PerformedAt)
+}
+
 // UpdateWorkout overwrites name and notes; performedAt is kept when zero.
 // Moving performedAt moves FinishedAt by the same amount, so a corrected
 // date keeps the session's duration.

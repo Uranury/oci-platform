@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/repo/dbgen"
@@ -17,6 +18,10 @@ type WorkoutSet interface {
 	// workout s.WorkoutID; ErrNotFound if the set isn't in that workout.
 	Update(ctx context.Context, s *models.WorkoutSet) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	// ListPrevious returns, per exercise, the user's sets from the most
+	// recent workout dated before `before` that included it, skipping
+	// excludeWorkoutID. Sessions are ordered by exercise ID.
+	ListPrevious(ctx context.Context, userID, excludeWorkoutID uuid.UUID, before time.Time) ([]models.PreviousSession, error)
 }
 
 type workoutSet struct {
@@ -91,4 +96,25 @@ func (r *workoutSet) Update(ctx context.Context, m *models.WorkoutSet) error {
 
 func (r *workoutSet) Delete(ctx context.Context, id uuid.UUID) error {
 	return affected(r.q.DeleteWorkoutSet(ctx, id))
+}
+
+func (r *workoutSet) ListPrevious(ctx context.Context, userID, excludeWorkoutID uuid.UUID, before time.Time) ([]models.PreviousSession, error) {
+	rows, err := r.q.ListPreviousSets(ctx, dbgen.ListPreviousSetsParams{
+		UserID: userID, ExcludeWorkoutID: excludeWorkoutID, Before: before,
+	})
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := []models.PreviousSession{}
+	for _, row := range rows {
+		set := toWorkoutSet(row.WorkoutSet, row.ExerciseName, row.ExerciseTrackingType)
+		if n := len(out); n == 0 || out[n-1].ExerciseID != set.ExerciseID {
+			out = append(out, models.PreviousSession{
+				ExerciseID: set.ExerciseID, WorkoutID: set.WorkoutID, PerformedAt: row.WorkoutPerformedAt,
+			})
+		}
+		last := &out[len(out)-1]
+		last.Sets = append(last.Sets, set)
+	}
+	return out, nil
 }

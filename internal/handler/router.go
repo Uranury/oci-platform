@@ -40,6 +40,7 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	api.PUT("/workouts/:id", workoutH.UpdateWorkout)
 	api.DELETE("/workouts/:id", workoutH.DeleteWorkout)
 	api.POST("/workouts/:id/finish", workoutH.FinishWorkout)
+	api.GET("/workouts/:id/previous", workoutH.PreviousSets)
 	api.POST("/workouts/:id/sets", workoutH.AddSet)
 	api.PUT("/workouts/:id/sets/:setID", workoutH.UpdateSet)
 	api.DELETE("/workouts/:id/sets/:setID", workoutH.DeleteSet)
