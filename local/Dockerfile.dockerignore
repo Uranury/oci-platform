@@ -1,0 +1,11 @@
+# Used by BuildKit for local/Dockerfile (build context is the repo root).
+# Only what `go build ./cmd/app` needs goes in.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!migrations/
+!pkg/
+!web/
+**/*_test.go

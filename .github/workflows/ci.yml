@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [master]
 
+# PR runs are grouped by PR number, never by ref: a PR merged before its run
+# starts is run against the base branch (ref refs/heads/master), which used
+# to put it in master's group and cancel the master push run, skipping the
+# release tag. Only PR runs cancel older runs; master runs always finish.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only by default; only the tag job gets write access.
 permissions:
