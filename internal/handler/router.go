@@ -48,5 +48,5 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 		_, _ = w.Write([]byte("Hello, you found me!\n"))
 	})
 
-	return mux
+	return logRequests(mux)
 }

@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -15,6 +16,9 @@ type Config struct {
 	JWTSecret       string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+	// LogLevel is the minimum level logged (LOG_LEVEL: debug, info, warn,
+	// error; default info). Debug adds per-request and SQL query logs.
+	LogLevel slog.Level
 }
 
 func Load() (*Config, error) {
@@ -40,6 +44,11 @@ func Load() (*Config, error) {
 	cfg.RefreshTokenTTL, err = getDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour)
 	if err != nil {
 		return nil, err
+	}
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		if err := cfg.LogLevel.UnmarshalText([]byte(v)); err != nil {
+			return nil, fmt.Errorf("config: LOG_LEVEL: %w", err)
+		}
 	}
 
 	return cfg, nil
