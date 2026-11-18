@@ -1,0 +1,49 @@
+# Local dev stack: Postgres + the app, built from this checkout.
+#
+#   docker compose -f local/compose.yaml up --build    # start (Ctrl-C stops)
+#   docker compose -f local/compose.yaml down          # stop, keep data
+#   docker compose -f local/compose.yaml down -v       # stop and wipe the DB
+#
+# App: http://localhost:8080 (APP_PORT). Postgres is published on 5433
+# (DB_PORT), not 5432, so it doesn't clash with a Postgres already running
+# on the machine: psql postgres://liftlog:liftlog@localhost:5433/liftlog
+#
+# Dev-only credentials and secret below; never reuse them anywhere real.
+
+name: liftlog
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: liftlog
+      POSTGRES_PASSWORD: liftlog
+      POSTGRES_DB: liftlog
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liftlog -d liftlog"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: ..
+      dockerfile: local/Dockerfile
+    environment:
+      DATABASE_URL: postgres://liftlog:liftlog@db:5432/liftlog?sslmode=disable
+      JWT_SECRET: local-dev-only-secret-not-for-production
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 168h
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
