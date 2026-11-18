@@ -32,8 +32,9 @@ type TemplateDetail struct {
 	Exercises []TemplateExercise `json:"exercises"`
 }
 
-// TemplateExercise is one planned exercise in a template. All targets are
-// optional; which ones may be set depends on the exercise's tracking type
+// TemplateExercise is one planned exercise in a template. There is no
+// weight target: weight is meant to go up, so the starting weight comes
+// from history, not the plan. All targets are optional; which ones may be set depends on the exercise's tracking type
 // (see ValidateFor). ExerciseName, ExerciseTrackingType and
 // ExerciseArchived come from a join.
 type TemplateExercise struct {
@@ -48,7 +49,6 @@ type TemplateExercise struct {
 	TargetSets            int      `json:"target_sets"`
 	TargetRepsMin         *int     `json:"target_reps_min"`
 	TargetRepsMax         *int     `json:"target_reps_max"`
-	TargetWeightKg        *float64 `json:"target_weight_kg"`
 	TargetDurationSeconds *int     `json:"target_duration_seconds"`
 	TargetDistanceM       *float64 `json:"target_distance_m"`
 	Notes                 *string  `json:"notes,omitempty"`
@@ -116,7 +116,6 @@ func (t *TemplateExercise) ValidateFor(tt TrackingType) error {
 		rangeMs string
 	}{
 		{"target_reps", rules.reps, t.TargetRepsMin != nil || t.TargetRepsMax != nil, repsOK(t.TargetRepsMin) && repsOK(t.TargetRepsMax), fmt.Sprintf("between 1 and %d", MaxReps)},
-		{"target_weight_kg", rules.weight, t.TargetWeightKg != nil, t.TargetWeightKg == nil || (*t.TargetWeightKg >= 0 && *t.TargetWeightKg <= MaxWeightKg), fmt.Sprintf("between 0 and %.2f", MaxWeightKg)},
 		{"target_duration_seconds", rules.duration, t.TargetDurationSeconds != nil, t.TargetDurationSeconds == nil || (*t.TargetDurationSeconds >= 1 && *t.TargetDurationSeconds <= MaxDurationSeconds), fmt.Sprintf("between 1 and %d", MaxDurationSeconds)},
 		{"target_distance_m", rules.distance, t.TargetDistanceM != nil, t.TargetDistanceM == nil || (*t.TargetDistanceM > 0 && *t.TargetDistanceM <= MaxDistanceM), fmt.Sprintf("greater than 0 and at most %.2f", MaxDistanceM)},
 	}
@@ -139,18 +138,12 @@ func (t *TemplateExercise) ValidateFor(tt TrackingType) error {
 
 // TemplateExerciseFromSets plans an exercise from the sets logged for it in
 // one workout: as many target sets as were logged, the rep range seen and
-// the heaviest weight / longest duration / longest distance. Only targets
+// the longest duration / distance (weight is never planned). Only targets
 // the exercise's current tracking type allows are set, so the result
 // passes ValidateFor even if old sets were logged under another type.
 func TemplateExerciseFromSets(exerciseID uuid.UUID, tt TrackingType, sets []WorkoutSet) TemplateExercise {
 	te := TemplateExercise{ExerciseID: exerciseID, TargetSets: min(len(sets), MaxTemplateSets)}
 	rules := setRules[tt]
-	maxF := func(cur, v *float64) *float64 {
-		if v != nil && (cur == nil || *v > *cur) {
-			return v
-		}
-		return cur
-	}
 	maxI := func(cur, v *int) *int {
 		if v != nil && (cur == nil || *v > *cur) {
 			return v
@@ -164,14 +157,13 @@ func TemplateExerciseFromSets(exerciseID uuid.UUID, tt TrackingType, sets []Work
 			}
 			te.TargetRepsMax = maxI(te.TargetRepsMax, s.Reps)
 		}
-		if rules.weight != notAllowed {
-			te.TargetWeightKg = maxF(te.TargetWeightKg, s.WeightKg)
-		}
 		if rules.duration != notAllowed {
 			te.TargetDurationSeconds = maxI(te.TargetDurationSeconds, s.DurationSeconds)
 		}
 		if rules.distance != notAllowed {
-			te.TargetDistanceM = maxF(te.TargetDistanceM, s.DistanceM)
+			if s.DistanceM != nil && (te.TargetDistanceM == nil || *s.DistanceM > *te.TargetDistanceM) {
+				te.TargetDistanceM = s.DistanceM
+			}
 		}
 	}
 	return te

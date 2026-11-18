@@ -46,8 +46,8 @@ DELETE FROM template_exercises WHERE template_id = @template_id;
 
 -- name: CreateTemplateExercise :exec
 INSERT INTO template_exercises (template_id, exercise_id, position, target_sets,
-    target_reps_min, target_reps_max, target_weight_kg, target_duration_seconds,
+    target_reps_min, target_reps_max, target_duration_seconds,
     target_distance_m, notes)
 VALUES (@template_id, @exercise_id, @position, @target_sets,
-    @target_reps_min, @target_reps_max, @target_weight_kg, @target_duration_seconds,
+    @target_reps_min, @target_reps_max, @target_duration_seconds,
     @target_distance_m, @notes);
