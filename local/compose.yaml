@@ -38,6 +38,8 @@ services:
       JWT_SECRET: local-dev-only-secret-not-for-production
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 168h
+      # Per-request and SQL query logs: docker compose -f local/compose.yaml logs -f app
+      LOG_LEVEL: debug
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:8080"
     depends_on:

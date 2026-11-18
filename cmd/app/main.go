@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
+	"maps"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -20,11 +23,13 @@ import (
 	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/Uranury/oci-platform/web"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/tracelog"
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("exiting", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -33,6 +38,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
+	slog.Debug("config loaded",
+		"listen", net.JoinHostPort(cfg.ListenHost, cfg.Port),
+		"log_level", cfg.LogLevel,
+		"access_token_ttl", cfg.AccessTokenTTL,
+		"refresh_token_ttl", cfg.RefreshTokenTTL,
+	)
 
 	if err := db.Migrate(cfg.DatabaseURL); err != nil {
 		return err
@@ -41,7 +53,29 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	if cfg.LogLevel <= slog.LevelDebug {
+		// Every query with its args and duration. Debug only: args include
+		// emails and password/token hashes (never raw tokens), fine for a
+		// local DB but not for production logs.
+		poolCfg.ConnConfig.Tracer = &tracelog.TraceLog{
+			Logger: tracelog.LoggerFunc(func(ctx context.Context, _ tracelog.LogLevel, msg string, data map[string]any) {
+				if msg == "Prepare" && data["err"] == nil {
+					return // the Query line right after carries the same SQL
+				}
+				attrs := make([]any, 0, 2*len(data))
+				for _, k := range slices.Sorted(maps.Keys(data)) { // stable field order
+					attrs = append(attrs, k, data[k])
+				}
+				slog.DebugContext(ctx, "pgx "+msg, attrs...)
+			}),
+			LogLevel: tracelog.LogLevelInfo, // queries and errors, not pool acquire/release noise
+		}
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return err
 	}
@@ -91,7 +125,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Printf("listening on :%s", cfg.Port)
+		slog.Info("listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 			return
@@ -103,7 +137,7 @@ func run() error {
 	case err := <-serveErr:
 		return err
 	case <-ctx.Done():
-		log.Println("shutting down")
+		slog.Info("shutting down")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
