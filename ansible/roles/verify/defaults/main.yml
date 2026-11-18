@@ -1,3 +1,4 @@
 ---
 verify_restore_db: tsis1linux_restore_test
-verify_task_title: ansible smoke test task
+verify_exercise_name: Ansible Smoke Press
+verify_workout_name: ansible smoke test workout

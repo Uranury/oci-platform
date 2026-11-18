@@ -77,34 +77,104 @@
       - verify_login.json.refresh_token | default('') | length > 0
     quiet: true
 
-- name: "API: GET /tasks without a token is 401"
+- name: "Frontend: GET / serves the web app"
   ansible.builtin.uri:
-    url: "{{ verify_base }}/tasks"
+    url: "{{ verify_base }}/"
+    return_content: true
+  register: verify_frontend
+
+- name: "Frontend: the page is the workout tracker"
+  ansible.builtin.assert:
+    that:
+      - verify_frontend.content_type is search('text/html')
+      - "'/app.js' in verify_frontend.content"
+    quiet: true
+
+- name: "API: GET /workouts without a token is 401"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts"
     status_code: 401
 
-- name: "API: create a task"
+- name: "API: create an exercise"
   ansible.builtin.uri:
-    url: "{{ verify_base }}/tasks"
+    url: "{{ verify_base }}/exercises"
     method: POST
     headers:
       Authorization: "Bearer {{ verify_login.json.access_token }}"
     body_format: json
-    body: { title: "{{ verify_task_title }}" }
+    body: { name: "{{ verify_exercise_name }}" }
+    status_code: 201
+  register: verify_exercise
+  no_log: true
+
+- name: "API: create a workout"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    body_format: json
+    body: { name: "{{ verify_workout_name }}" }
+    status_code: 201
+  register: verify_workout
+  no_log: true
+
+- name: "API: log a set"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts/{{ verify_workout.json.id }}/sets"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    body_format: json
+    body:
+      exercise_id: "{{ verify_exercise.json.id }}"
+      reps: 5
+      weight_kg: 62.5
     status_code: 201
   no_log: true
 
-- name: "API: list tasks"
+- name: "API: list workouts"
   ansible.builtin.uri:
-    url: "{{ verify_base }}/tasks"
+    url: "{{ verify_base }}/workouts"
     headers:
       Authorization: "Bearer {{ verify_login.json.access_token }}"
-  register: verify_tasks
+  register: verify_workouts
   no_log: true
 
-- name: "API: the list shows the new task"
+- name: "API: get the workout with its sets"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts/{{ verify_workout.json.id }}"
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+  register: verify_workout_detail
+  no_log: true
+
+- name: "API: the list shows the workout and the set reads back intact"
   ansible.builtin.assert:
-    that: verify_task_title in (verify_tasks.json | map(attribute='title') | list)
+    that:
+      - verify_workout.json.id in (verify_workouts.json | map(attribute='id') | list)
+      - verify_workout_detail.json.sets | length == 1
+      - verify_workout_detail.json.sets[0].exercise_name == verify_exercise_name
+      - verify_workout_detail.json.sets[0].reps == 5
+      - verify_workout_detail.json.sets[0].weight_kg | float == 62.5
     quiet: true
+
+- name: "API: delete the workout"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts/{{ verify_workout.json.id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    status_code: 204
+  no_log: true
+
+- name: "API: the deleted workout is gone"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts/{{ verify_workout.json.id }}"
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    status_code: 404
+  no_log: true
 
 - name: "API: logout"
   ansible.builtin.uri:
