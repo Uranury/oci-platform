@@ -40,14 +40,21 @@ func mustUser(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	return id, ok
 }
 
-// writeLookupError maps missing or not-owned resources to 404 either way so
-// a client can't probe which IDs exist.
+// writeLookupError maps service errors to responses. Missing and not-owned
+// resources are both 404, so a client can't probe which IDs exist.
 func writeLookupError(w http.ResponseWriter, err error, what string) {
+	var verr models.ValidationError
 	switch {
+	case errors.As(err, &verr):
+		writeError(w, http.StatusBadRequest, verr.Error())
 	case errors.Is(err, repo.ErrNotFound), errors.Is(err, service.ErrForbidden):
 		writeError(w, http.StatusNotFound, what+" not found")
-	case errors.Is(err, service.ErrExerciseInUse):
-		writeError(w, http.StatusConflict, "exercise has logged sets; delete those first")
+	case errors.Is(err, service.ErrReadOnly):
+		writeError(w, http.StatusForbidden, "default exercises are read-only; duplicate it to customize")
+	case errors.Is(err, service.ErrExerciseExists):
+		writeError(w, http.StatusConflict, "you already have an exercise with that name")
+	case errors.Is(err, service.ErrExerciseArchived):
+		writeError(w, http.StatusConflict, "exercise is archived")
 	default:
 		writeError(w, http.StatusInternalServerError, "could not process "+what)
 	}
@@ -64,70 +71,6 @@ func emptyToNil(s *string) *string {
 		return nil
 	}
 	return &t
-}
-
-// --- exercises ---
-
-type exerciseRequest struct {
-	Name string `json:"name"`
-}
-
-func (h *WorkoutHandler) CreateExercise(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	var req exerciseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	e, err := h.svc.CreateExercise(r.Context(), userID, req.Name)
-	if err != nil {
-		if errors.Is(err, service.ErrExerciseExists) {
-			writeError(w, http.StatusConflict, "exercise already exists")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "could not create exercise")
-		return
-	}
-	writeJSON(w, http.StatusCreated, e)
-}
-
-func (h *WorkoutHandler) ListExercises(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListExercises(r.Context(), userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list exercises")
-		return
-	}
-	if list == nil {
-		list = []models.Exercise{}
-	}
-	writeJSON(w, http.StatusOK, list)
-}
-
-func (h *WorkoutHandler) DeleteExercise(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	if err := h.svc.DeleteExercise(r.Context(), userID, id); err != nil {
-		writeLookupError(w, err, "exercise")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- workouts ---
@@ -237,11 +180,15 @@ func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
 // --- sets ---
 
 type setRequest struct {
-	ExerciseID uuid.UUID `json:"exercise_id"`
-	Reps       int       `json:"reps"`
-	WeightKg   float64   `json:"weight_kg"`
+	ExerciseID      uuid.UUID `json:"exercise_id"`
+	Reps            *int      `json:"reps"`
+	WeightKg        *float64  `json:"weight_kg"`
+	DurationSeconds *int      `json:"duration_seconds"`
+	DistanceM       *float64  `json:"distance_m"`
 }
 
+// AddSet logs a set. Which measurements are required depends on the
+// exercise's tracking_type (see models.WorkoutSet.ValidateFor).
 func (h *WorkoutHandler) AddSet(w http.ResponseWriter, r *http.Request) {
 	userID, ok := mustUser(w, r)
 	if !ok {
@@ -260,15 +207,12 @@ func (h *WorkoutHandler) AddSet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "exercise_id is required")
 		return
 	}
-	if req.Reps <= 0 || req.Reps > 10000 {
-		writeError(w, http.StatusBadRequest, "reps must be between 1 and 10000")
-		return
-	}
-	if req.WeightKg < 0 || req.WeightKg >= 10000 { // NUMERIC(6,2)
-		writeError(w, http.StatusBadRequest, "weight_kg must be between 0 and 9999.99")
-		return
-	}
-	set, err := h.svc.AddSet(r.Context(), userID, workoutID, req.ExerciseID, req.Reps, req.WeightKg)
+	set, err := h.svc.AddSet(r.Context(), userID, workoutID, req.ExerciseID, service.SetInput{
+		Reps:            req.Reps,
+		WeightKg:        req.WeightKg,
+		DurationSeconds: req.DurationSeconds,
+		DistanceM:       req.DistanceM,
+	})
 	if err != nil {
 		writeLookupError(w, err, "workout or exercise")
 		return

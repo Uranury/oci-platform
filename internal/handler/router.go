@@ -9,7 +9,7 @@ import (
 
 // NewRouter wires the API routes and serves the frontend (static files from
 // webFS) at "/" for every GET path no API route claims.
-func NewRouter(authH *AuthHandler, workoutH *WorkoutHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
+func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *WorkoutHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /auth/register", authH.Register)
@@ -18,9 +18,13 @@ func NewRouter(authH *AuthHandler, workoutH *WorkoutHandler, jwtIssuer *auth.JWT
 	mux.HandleFunc("POST /auth/logout", authH.Logout)
 	mux.HandleFunc("POST /auth/logout-all", requireAuth(jwtIssuer, authH.LogoutAll))
 
-	mux.HandleFunc("GET /exercises", requireAuth(jwtIssuer, workoutH.ListExercises))
-	mux.HandleFunc("POST /exercises", requireAuth(jwtIssuer, workoutH.CreateExercise))
-	mux.HandleFunc("DELETE /exercises/{id}", requireAuth(jwtIssuer, workoutH.DeleteExercise))
+	mux.HandleFunc("GET /exercise-options", exerciseH.Options)
+	mux.HandleFunc("GET /exercises", requireAuth(jwtIssuer, exerciseH.List))
+	mux.HandleFunc("POST /exercises", requireAuth(jwtIssuer, exerciseH.Create))
+	mux.HandleFunc("GET /exercises/similar", requireAuth(jwtIssuer, exerciseH.Similar))
+	mux.HandleFunc("PUT /exercises/{id}", requireAuth(jwtIssuer, exerciseH.Update))
+	mux.HandleFunc("DELETE /exercises/{id}", requireAuth(jwtIssuer, exerciseH.Delete))
+	mux.HandleFunc("POST /exercises/{id}/duplicate", requireAuth(jwtIssuer, exerciseH.Duplicate))
 
 	mux.HandleFunc("GET /workouts", requireAuth(jwtIssuer, workoutH.ListWorkouts))
 	mux.HandleFunc("POST /workouts", requireAuth(jwtIssuer, workoutH.CreateWorkout))
