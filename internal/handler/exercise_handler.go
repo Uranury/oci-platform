@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/service"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type ExerciseHandler struct {
@@ -19,9 +20,9 @@ func NewExerciseHandler(s *service.ExerciseService) *ExerciseHandler {
 
 // Options serves the fixed category lists (the single definition in
 // models/exercise_enums.go) for the frontend's dropdowns.
-func (h *ExerciseHandler) Options(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	writeJSON(w, http.StatusOK, models.AllExerciseOptions())
+func (h *ExerciseHandler) Options(c *gin.Context) {
+	c.Header("Cache-Control", "public, max-age=300")
+	c.JSON(http.StatusOK, models.AllExerciseOptions())
 }
 
 type exerciseRequest struct {
@@ -47,60 +48,52 @@ func (req exerciseRequest) input() service.ExerciseInput {
 }
 
 // List returns non-archived system defaults plus the user's own exercises.
-func (h *ExerciseHandler) List(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	list, err := h.svc.List(r.Context(), userID)
+func (h *ExerciseHandler) List(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	list, err := h.svc.List(c.Request.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list exercises")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list exercises"})
 		return
 	}
 	if list == nil {
 		list = []models.Exercise{}
 	}
-	writeJSON(w, http.StatusOK, list)
+	c.JSON(http.StatusOK, list)
 }
 
-func (h *ExerciseHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *ExerciseHandler) Create(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var req exerciseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	e, err := h.svc.Create(c.Request.Context(), userID, req.input())
+	if err != nil {
+		_ = c.Error(err).SetMeta("exercise")
+		return
+	}
+	c.JSON(http.StatusCreated, e)
+}
+
+func (h *ExerciseHandler) Update(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req exerciseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	e, err := h.svc.Create(r.Context(), userID, req.input())
+	e, err := h.svc.Update(c.Request.Context(), userID, uri.ID, req.input())
 	if err != nil {
-		writeLookupError(w, err, "exercise")
+		_ = c.Error(err).SetMeta("exercise")
 		return
 	}
-	writeJSON(w, http.StatusCreated, e)
-}
-
-func (h *ExerciseHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var req exerciseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	e, err := h.svc.Update(r.Context(), userID, id, req.input())
-	if err != nil {
-		writeLookupError(w, err, "exercise")
-		return
-	}
-	writeJSON(w, http.StatusOK, e)
+	c.JSON(http.StatusOK, e)
 }
 
 type deleteExerciseResponse struct {
@@ -108,25 +101,23 @@ type deleteExerciseResponse struct {
 	Result string `json:"result"`
 }
 
-func (h *ExerciseHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *ExerciseHandler) Delete(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	archived, err := h.svc.Delete(r.Context(), userID, id)
+	archived, err := h.svc.Delete(c.Request.Context(), userID, uri.ID)
 	if err != nil {
-		writeLookupError(w, err, "exercise")
+		_ = c.Error(err).SetMeta("exercise")
 		return
 	}
 	res := deleteExerciseResponse{Result: "deleted"}
 	if archived {
 		res.Result = "archived"
 	}
-	writeJSON(w, http.StatusOK, res)
+	c.JSON(http.StatusOK, res)
 }
 
 type duplicateRequest struct {
@@ -135,45 +126,40 @@ type duplicateRequest struct {
 
 // Duplicate copies a visible exercise (usually a default) into a custom one
 // owned by the user. The body is optional; {"name"} renames the copy.
-func (h *ExerciseHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
+func (h *ExerciseHandler) Duplicate(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req duplicateRequest
-	if r.ContentLength != 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 			return
 		}
 	}
-	e, err := h.svc.Duplicate(r.Context(), userID, id, strings.TrimSpace(req.Name))
+	e, err := h.svc.Duplicate(c.Request.Context(), userID, uri.ID, strings.TrimSpace(req.Name))
 	if err != nil {
-		writeLookupError(w, err, "exercise")
+		_ = c.Error(err).SetMeta("exercise")
 		return
 	}
-	writeJSON(w, http.StatusCreated, e)
+	c.JSON(http.StatusCreated, e)
 }
 
 // Similar lists defaults whose names closely match ?name=, for a
 // "did you mean…" warning before creating a custom exercise. Never blocks.
-func (h *ExerciseHandler) Similar(w http.ResponseWriter, r *http.Request) {
-	if _, ok := mustUser(w, r); !ok {
-		return
-	}
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
+func (h *ExerciseHandler) Similar(c *gin.Context) {
+	name := strings.TrimSpace(c.Query("name"))
 	if name == "" {
-		writeJSON(w, http.StatusOK, []models.Exercise{})
+		c.JSON(http.StatusOK, []models.Exercise{})
 		return
 	}
-	list, err := h.svc.SimilarDefaults(r.Context(), name)
+	list, err := h.svc.SimilarDefaults(c.Request.Context(), name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not check names")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check names"})
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	c.JSON(http.StatusOK, list)
 }

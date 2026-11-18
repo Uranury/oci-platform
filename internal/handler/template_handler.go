@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -48,133 +48,117 @@ func (req templateRequest) input() service.TemplateInput {
 	return service.TemplateInput{Name: req.Name, Notes: emptyToNil(req.Notes), Exercises: items}
 }
 
-func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	list, err := h.svc.List(r.Context(), userID)
+func (h *TemplateHandler) List(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	list, err := h.svc.List(c.Request.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list templates")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list templates"})
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	c.JSON(http.StatusOK, list)
 }
 
-func (h *TemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *TemplateHandler) Get(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	t, err := h.svc.Get(r.Context(), userID, id)
+	t, err := h.svc.Get(c.Request.Context(), userID, uri.ID)
 	if err != nil {
-		writeLookupError(w, err, "template")
+		_ = c.Error(err).SetMeta("template")
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	c.JSON(http.StatusOK, t)
 }
 
-func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
+func (h *TemplateHandler) Create(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
 	var req templateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	t, err := h.svc.Create(r.Context(), userID, req.input())
+	t, err := h.svc.Create(c.Request.Context(), userID, req.input())
 	if err != nil {
-		writeLookupError(w, err, "template")
+		_ = c.Error(err).SetMeta("template")
 		return
 	}
-	writeJSON(w, http.StatusCreated, t)
+	c.JSON(http.StatusCreated, t)
 }
 
 // Update replaces the whole template, exercises included.
-func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
+func (h *TemplateHandler) Update(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req templateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	t, err := h.svc.Update(r.Context(), userID, id, req.input())
+	t, err := h.svc.Update(c.Request.Context(), userID, uri.ID, req.input())
 	if err != nil {
-		writeLookupError(w, err, "template")
+		_ = c.Error(err).SetMeta("template")
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	c.JSON(http.StatusOK, t)
 }
 
-func (h *TemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *TemplateHandler) Delete(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
+	if err := h.svc.Delete(c.Request.Context(), userID, uri.ID); err != nil {
+		_ = c.Error(err).SetMeta("template")
 		return
 	}
-	if err := h.svc.Delete(r.Context(), userID, id); err != nil {
-		writeLookupError(w, err, "template")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
 // Start creates a workout linked to the template and returns it.
-func (h *TemplateHandler) Start(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
+func (h *TemplateHandler) Start(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	wo, err := h.svc.Start(r.Context(), userID, id)
+	wo, err := h.svc.Start(c.Request.Context(), userID, uri.ID)
 	if err != nil {
-		writeLookupError(w, err, "template")
+		_ = c.Error(err).SetMeta("template")
 		return
 	}
-	writeJSON(w, http.StatusCreated, wo)
+	c.JSON(http.StatusCreated, wo)
 }
 
 // FromWorkout saves a logged workout as a new template. Body: {"name": ...},
 // optional (defaults to the workout's name).
-func (h *TemplateHandler) FromWorkout(w http.ResponseWriter, r *http.Request) {
-	userID, ok := mustUser(w, r)
-	if !ok {
-		return
-	}
-	workoutID, ok := pathID(w, r, "id")
-	if !ok {
+func (h *TemplateHandler) FromWorkout(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	t, err := h.svc.FromWorkout(r.Context(), userID, workoutID, req.Name)
+	t, err := h.svc.FromWorkout(c.Request.Context(), userID, uri.ID, req.Name)
 	if err != nil {
-		writeLookupError(w, err, "workout")
+		_ = c.Error(err).SetMeta("workout")
 		return
 	}
-	writeJSON(w, http.StatusCreated, t)
+	c.JSON(http.StatusCreated, t)
 }

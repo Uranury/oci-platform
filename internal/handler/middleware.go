@@ -1,81 +1,101 @@
 package handler
 
 import (
-	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Uranury/oci-platform/internal/auth"
+	"github.com/Uranury/oci-platform/internal/models"
+	"github.com/Uranury/oci-platform/internal/repo"
+	"github.com/Uranury/oci-platform/internal/service"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
-// requireAuth wraps next so it only runs when the request carries a valid
-// "Authorization: Bearer <jwt>" header, injecting the user ID into the
-// request context for handlers to read via userIDFromContext.
-func requireAuth(jwtIssuer *auth.JWTIssuer, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		raw, ok := strings.CutPrefix(header, "Bearer ")
+// userIDKey is the gin context key requireAuth stores the user ID under;
+// handlers behind requireAuth read it with c.MustGet(userIDKey).(uuid.UUID).
+const userIDKey = "userID"
+
+// idURI and setURI bind the UUID path parameters.
+type idURI struct {
+	ID uuid.UUID `uri:"id,parser=encoding.TextUnmarshaler"`
+}
+
+type setURI struct {
+	ID    uuid.UUID `uri:"id,parser=encoding.TextUnmarshaler"`
+	SetID uuid.UUID `uri:"setID,parser=encoding.TextUnmarshaler"`
+}
+
+// requireAuth only lets the request through when it carries a valid
+// "Authorization: Bearer <jwt>" header, storing the user ID under userIDKey.
+func requireAuth(jwtIssuer *auth.JWTIssuer) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
 		if !ok || raw == "" {
-			writeError(w, http.StatusUnauthorized, "missing bearer token")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-
 		claims, err := jwtIssuer.ParseAccessToken(raw)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
-
-		ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
-		next(w, r.WithContext(ctx))
+		c.Set(userIDKey, claims.UserID)
+		c.Next()
 	}
 }
 
-// statusRecorder captures the status code and body size a handler wrote.
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-	bytes  int
-}
-
-func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
-
-func (r *statusRecorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
+// handleErrors turns a service error a handler attached with
+// c.Error(err).SetMeta("<resource>") into a response. Missing and not-owned
+// resources are both 404, so a client can't probe which IDs exist.
+func handleErrors(c *gin.Context) {
+	c.Next()
+	last := c.Errors.Last()
+	if last == nil || c.Writer.Written() {
+		return
 	}
-	n, err := r.ResponseWriter.Write(b)
-	r.bytes += n
-	return n, err
+	what, _ := last.Meta.(string)
+	err := last.Err
+
+	status, msg := http.StatusInternalServerError, "could not process "+what
+	var verr models.ValidationError
+	switch {
+	case errors.As(err, &verr):
+		status, msg = http.StatusBadRequest, verr.Error()
+	case errors.Is(err, repo.ErrNotFound), errors.Is(err, service.ErrForbidden):
+		status, msg = http.StatusNotFound, what+" not found"
+	case errors.Is(err, service.ErrReadOnly):
+		status, msg = http.StatusForbidden, "default exercises are read-only; duplicate it to customize"
+	case errors.Is(err, service.ErrExerciseExists):
+		status, msg = http.StatusConflict, "you already have an exercise with that name"
+	case errors.Is(err, service.ErrTemplateExists):
+		status, msg = http.StatusConflict, "you already have a template with that name"
+	case errors.Is(err, service.ErrExerciseArchived):
+		status, msg = http.StatusConflict, "exercise is archived"
+	}
+	c.JSON(status, gin.H{"error": msg})
 }
 
 // logRequests logs every request at DEBUG and every 5xx at ERROR. In
 // production (LOG_LEVEL=info) only the 5xx lines show; nginx already keeps
 // the access log there. Query strings are left out: they could carry user
 // input, and the path is enough to find the handler.
-func logRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w}
-		next.ServeHTTP(rec, r)
-		if rec.status == 0 {
-			rec.status = http.StatusOK
-		}
-		level := slog.LevelDebug
-		if rec.status >= http.StatusInternalServerError {
-			level = slog.LevelError
-		}
-		slog.Log(r.Context(), level, "request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", rec.status,
-			"bytes", rec.bytes,
-			"duration", time.Since(start).Round(time.Microsecond),
-		)
-	})
+func logRequests(c *gin.Context) {
+	start := time.Now()
+	c.Next()
+	status := c.Writer.Status()
+	level := slog.LevelDebug
+	if status >= http.StatusInternalServerError {
+		level = slog.LevelError
+	}
+	slog.Log(c.Request.Context(), level, "request",
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
+		"status", status,
+		"bytes", max(c.Writer.Size(), 0),
+		"duration", time.Since(start).Round(time.Microsecond),
+	)
 }
