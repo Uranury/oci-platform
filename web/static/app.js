@@ -1,7 +1,7 @@
 "use strict";
 
 // Lift Log frontend: plain JS, no build step. Hash routing:
-//   #/login  #/  #/workouts/<id>  #/exercises
+//   #/login  #/  #/workouts/<id>  #/templates  #/templates/<id|new>  #/exercises
 
 // ---------- tokens ----------
 
@@ -131,6 +131,32 @@ function fmtWeight(kg) {
   return (Math.round(kg * 100) / 100).toString();
 }
 
+// "today", "yesterday", "3 days ago", then a date.
+function fmtAgo(iso) {
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((day(new Date()) - day(new Date(iso))) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  return fmtDate(iso);
+}
+
+function templateMeta(t) {
+  const n = `${t.exercise_count} exercise${t.exercise_count === 1 ? "" : "s"}`;
+  return n + " · " + (t.last_used_at ? "last done " + fmtAgo(t.last_used_at) : "never done");
+}
+
+async function startTemplate(t, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const w = await api("POST", `/templates/${t.id}/start`);
+    go("#/workouts/" + w.id);
+  } catch (e) {
+    fail(e);
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ---------- routing ----------
 
 function go(hash) {
@@ -149,6 +175,9 @@ function route() {
   let m;
   if (hash === "#/login") return viewLogin();
   if (hash === "#/exercises") return nav("exercises"), viewExercises().catch(fail);
+  if (hash === "#/templates") return nav("templates"), viewTemplates().catch(fail);
+  if (hash === "#/templates/new") return nav("templates"), viewTemplate(null).catch(fail);
+  if ((m = hash.match(/^#\/templates\/([0-9a-f-]{36})$/))) return nav("templates"), viewTemplate(m[1]).catch(fail);
   if ((m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/))) return nav("workouts"), viewWorkout(m[1]).catch(fail);
   nav("workouts");
   viewWorkouts().catch(fail);
@@ -251,7 +280,17 @@ async function viewWorkouts() {
   }, "+ Start workout");
 
   render(h("h1", {}, "Workouts"), start, h("p.muted", {}, "Loading…"));
-  const workouts = await api("GET", "/workouts");
+  const [workouts, templates] = await Promise.all([api("GET", "/workouts"), api("GET", "/templates")]);
+
+  const fromTemplate = templates.length
+    ? [h("h2.section", {}, "Start from a template"),
+       h("ul.list.card", {}, templates.map((t) => {
+         const btn = h("button.small", { onclick: () => startTemplate(t, btn) }, "Start");
+         return h("li", {},
+           h("div", {}, h("div", {}, t.name), h("div.muted.small", {}, templateMeta(t))),
+           btn);
+       }))]
+    : [];
 
   const items = workouts.length
     ? workouts.map((w) =>
@@ -260,7 +299,13 @@ async function viewWorkouts() {
           h("div.muted.small", {}, fmtDate(w.performed_at) + " · " + fmtTime(w.performed_at))))
     : [h("p.muted.empty", {}, "No workouts yet. Start your first one.")];
 
-  render(h("h1", {}, "Workouts"), h("div", { style: "margin-bottom:16px" }, start), ...items);
+  render(
+    h("h1", {}, "Workouts"),
+    h("div", { style: "margin-bottom:16px" }, start),
+    ...fromTemplate,
+    templates.length || workouts.length ? h("h2.section", {}, "History") : null,
+    ...items,
+  );
 }
 
 // ---------- exercise library helpers ----------
@@ -306,6 +351,21 @@ function fmtSet(s) {
   if (s.duration_seconds != null) parts.push(fmtDuration(s.duration_seconds));
   if (s.reps == null && w && s.weight_kg > 0) parts.push(`@ ${w}`);
   return parts.join(" · ");
+}
+
+// "2/3 sets · 8–12 reps · 60 kg"; done is omitted outside a workout.
+function fmtTarget(t, done) {
+  const out = [`${done != null ? done + "/" : ""}${t.target_sets} set${t.target_sets === 1 && done == null ? "" : "s"}`];
+  if (t.target_reps_min != null) {
+    out.push(t.target_reps_min === t.target_reps_max
+      ? `${t.target_reps_min} reps` : `${t.target_reps_min}–${t.target_reps_max} reps`);
+  }
+  if (t.target_distance_m != null) out.push(`${fmtWeight(t.target_distance_m)} m`);
+  if (t.target_duration_seconds != null) out.push(fmtDuration(t.target_duration_seconds));
+  if (t.target_weight_kg != null) {
+    out.push((t.exercise_tracking_type === "weight_reps" ? "" : "+") + fmtWeight(t.target_weight_kg) + " kg");
+  }
+  return out.join(" · ");
 }
 
 function select(list, value, { placeholder, required } = {}) {
@@ -425,6 +485,11 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     getOptions(),
   ]);
   const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
+  // The plan, if started from a template (gone if it was deleted since).
+  const template = w.template_id
+    ? await api("GET", "/templates/" + w.template_id).catch((e) => (e.status === 404 ? null : Promise.reject(e)))
+    : null;
+  const plan = template ? template.exercises : [];
 
   // --- header: name, date (saved on change) ---
   const name = h("input", { value: w.name || "", placeholder: "Workout name (e.g. Push day)" });
@@ -452,9 +517,30 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     lastByExercise[s.exercise_id] = s;
   }
 
-  const groupCards = [...groups.values()].map((g) =>
+  // Planned exercises first, in template order (with progress and the
+  // target), then anything logged that wasn't in the plan.
+  const planned = new Set(plan.map((te) => te.exercise_id));
+  const cards = [
+    ...plan.map((te) => ({ te, g: groups.get(te.exercise_id) || { name: te.exercise_name, sets: [] } })),
+    ...[...groups].filter(([exId]) => !planned.has(exId)).map(([, g]) => ({ g })),
+  ];
+  const doneOf = (exId) => (groups.get(exId) || { sets: [] }).sets.length;
+
+  const groupCards = cards.map(({ te, g }) =>
     h("div.card", {},
-      h("h2", {}, g.name),
+      h("div.card-head", {},
+        h("h2", {}, g.name),
+        te && !te.exercise_archived && byId[te.exercise_id]
+          ? h("button.small", { type: "button", onclick: () => {
+            // While the new-exercise form is open there's no set form to fill.
+            if (entry.pick) return entry.pick(te.exercise_id);
+            lastExerciseId = te.exercise_id;
+            viewWorkout(id).catch(fail);
+          } }, "Log")
+          : null),
+      te ? h("p.muted.small.plan-meta", {},
+        fmtTarget(te, g.sets.length) + (te.exercise_archived ? " · archived" : "")) : null,
+      te && te.notes ? h("p.muted.small.plan-meta", {}, te.notes) : null,
       h("ul.sets", {}, g.sets.map((s, i) =>
         h("li", {},
           h("span.n", {}, i + 1),
@@ -499,7 +585,17 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
       h("option", { value: NEW }, "+ New exercise…"));
 
     const lastInWorkout = w.sets.length ? w.sets[w.sets.length - 1].exercise_id : null;
-    const prefer = byId[lastExerciseId] ? lastExerciseId : lastInWorkout;
+    let prefer = byId[lastExerciseId] ? lastExerciseId : lastInWorkout;
+    if (plan.length) {
+      // Stay on the current planned exercise until its sets are done, then
+      // move to the next unfinished one.
+      const open = (te) => byId[te.exercise_id] && doneOf(te.exercise_id) < te.target_sets;
+      const cur = plan.find((te) => te.exercise_id === prefer);
+      if (!cur || !open(cur)) {
+        const next = plan.find(open);
+        if (next) prefer = next.exercise_id;
+      }
+    }
     if (prefer && byId[prefer]) exSelect.value = prefer;
 
     const fieldsBox = h("div.row");
@@ -509,7 +605,11 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
       inputs = {};
       const ex = byId[exSelect.value];
       if (!ex) { fieldsBox.replaceChildren(); return; }
-      const prev = lastByExercise[ex.id] || {};
+      const te = plan.find((p) => p.exercise_id === ex.id);
+      const prev = lastByExercise[ex.id] || (te ? {
+        reps: te.target_reps_min, weight_kg: te.target_weight_kg,
+        duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
+      } : {});
       fieldsBox.replaceChildren(...SET_FIELDS[ex.tracking_type].map(([key, label, required]) => {
         let input;
         if (key === "duration") {
@@ -537,7 +637,7 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
     buildFields();
 
     const addBtn = h("button.primary.block", { type: "submit" }, "Log set");
-    return h("form.card.stack", {
+    const form = h("form.card.stack", {
       onsubmit: async (e) => {
         e.preventDefault();
         const ex = byId[exSelect.value];
@@ -564,7 +664,30 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
       field("Exercise", exSelect),
       fieldsBox,
       addBtn);
+
+    // Called by a plan card's "Log" button.
+    form.pick = (exId) => {
+      exSelect.value = exId;
+      lastExerciseId = exId;
+      buildFields();
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+      const first = fieldsBox.querySelector("input");
+      if (first) first.focus({ preventScroll: true });
+    };
+    return form;
   }
+
+  const saveAsTemplate = w.sets.length ? h("button.block", {
+    onclick: async () => {
+      const n = prompt("Name for the new template", w.name || "");
+      if (n === null) return;
+      try {
+        const t = await api("POST", `/workouts/${id}/save-as-template`, { name: n.trim() });
+        toast(`Saved template "${t.name}"`);
+        go("#/templates/" + t.id);
+      } catch (e) { fail(e); }
+    },
+  }, "Save as template") : null;
 
   const del = h("button.danger.block", {
     onclick: async () => {
@@ -578,12 +701,219 @@ async function viewWorkout(id, { creatingExercise = false } = {}) {
 
   render(
     h("p", {}, h("a.muted.small", { href: "#/" }, "← All workouts")),
-    h("div.card.stack", {}, name, when),
+    h("div.card.stack", {}, name, when,
+      template ? h("p.muted.small", { style: "margin-bottom:0" }, "From template ",
+        h("a", { href: "#/templates/" + template.id }, template.name)) : null),
     ...groupCards,
-    w.sets.length ? null : h("p.muted.empty", {}, "No sets yet. Log your first one below."),
+    groupCards.length ? null : h("p.muted.empty", {}, "No sets yet. Log your first one below."),
     entry,
     h("div.card", {}, h("label", {}, "Notes"), notes),
+    saveAsTemplate,
     del,
+  );
+}
+
+// ---------- views: templates ----------
+
+async function viewTemplates() {
+  if (!app.childElementCount) render(h("h1", {}, "Templates"), h("p.muted", {}, "Loading…"));
+  const templates = await api("GET", "/templates");
+
+  const list = templates.length
+    ? h("ul.list.card", {}, templates.map((t) => {
+        const start = h("button.small", { onclick: () => startTemplate(t, start) }, "Start");
+        return h("li", {},
+          h("div", {}, h("div", {}, t.name), h("div.muted.small", {}, templateMeta(t))),
+          h("div.actions", {},
+            start,
+            h("button.small", { onclick: () => go("#/templates/" + t.id) }, "Edit")));
+      }))
+    : h("p.muted.empty", {}, "No templates yet. Build one here, or open a logged workout and tap “Save as template”.");
+
+  render(
+    h("h1", {}, "Templates"),
+    h("button.primary.block", { style: "margin-bottom:16px", onclick: () => go("#/templates/new") }, "+ New template"),
+    list,
+  );
+}
+
+// Target inputs per tracking type; mirrors models.setRules on the server
+// (which enforces it). All targets are optional.
+const TARGET_FIELDS = {
+  weight_reps: ["reps", "weight_kg"],
+  bodyweight_reps: ["reps", "weight_kg"],
+  duration: ["duration", "weight_kg"],
+  distance: ["distance_m", "duration", "weight_kg"],
+};
+
+const TARGET_INPUTS = {
+  reps: { label: "Reps", attrs: { inputmode: "numeric", placeholder: "8 or 8-12", pattern: "\\d+(\\s*[\\-–]\\s*\\d+)?" } },
+  weight_kg: { label: "Weight (kg)", attrs: { type: "number", inputmode: "decimal", min: 0, step: "0.25", placeholder: "optional" } },
+  duration: { label: "Time (min:sec)", attrs: { inputmode: "numeric", placeholder: "1:30", pattern: "\\d+(:[0-5]?\\d)?" } },
+  distance_m: { label: "Distance (m)", attrs: { type: "number", inputmode: "decimal", min: 0, step: "any", placeholder: "optional" } },
+};
+
+// "8" → [8, 8], "8-12" → [8, 12]; null if malformed.
+function parseReps(str) {
+  const m = str.trim().match(/^(\d+)(?:\s*[-–]\s*(\d+))?$/);
+  return m ? [parseInt(m[1], 10), parseInt(m[2] || m[1], 10)] : null;
+}
+
+// Template editor; id null = new. The whole exercise list is sent on save
+// (PUT replaces it), so editing is purely local until then.
+async function viewTemplate(id) {
+  render(h("p.muted", {}, "Loading…"));
+  const [t, exercises] = await Promise.all([
+    id ? api("GET", "/templates/" + id) : { name: "", notes: "", exercises: [] },
+    api("GET", "/exercises"),
+  ]);
+  const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
+  // Archived exercises aren't in /exercises but may stay in a template.
+  const archived = [];
+  for (const te of t.exercises) {
+    if (!byId[te.exercise_id]) {
+      byId[te.exercise_id] = { id: te.exercise_id, name: te.exercise_name + " (archived)", tracking_type: te.exercise_tracking_type };
+      archived.push(byId[te.exercise_id]);
+    }
+  }
+  const mine = exercises.filter((e) => !e.system);
+  const library = exercises.filter((e) => e.system);
+
+  // Each row keeps raw input strings; they're parsed on save.
+  const blank = () => ({ exercise_id: "", sets: "3", reps: "", weight_kg: "", duration: "", distance_m: "", notes: "" });
+  const items = t.exercises.map((te) => ({
+    exercise_id: te.exercise_id,
+    sets: String(te.target_sets),
+    reps: te.target_reps_min == null ? ""
+      : te.target_reps_min === te.target_reps_max ? String(te.target_reps_min)
+      : `${te.target_reps_min}-${te.target_reps_max}`,
+    weight_kg: te.target_weight_kg == null ? "" : fmtWeight(te.target_weight_kg),
+    duration: te.target_duration_seconds == null ? "" : fmtDuration(te.target_duration_seconds),
+    distance_m: te.target_distance_m == null ? "" : fmtWeight(te.target_distance_m),
+    notes: te.notes || "",
+  }));
+  if (!items.length) items.push(blank());
+
+  const name = h("input", { value: t.name, required: true, maxlength: 100, placeholder: "e.g. Push day A" });
+  const notes = h("textarea", { placeholder: "Notes (optional)" });
+  notes.value = t.notes || "";
+  const list = h("div");
+
+  function bind(item, key, attrs) {
+    const el = h("input", { ...attrs, value: item[key] });
+    el.addEventListener("input", () => { item[key] = el.value; });
+    return el;
+  }
+
+  function row(item, i) {
+    const exSelect = h("select", {},
+      h("option", { value: "" }, "Choose exercise…"),
+      archived.length ? h("optgroup", { label: "Archived" }, archived.map((e) => h("option", { value: e.id }, e.name))) : null,
+      mine.length ? h("optgroup", { label: "My exercises" }, mine.map((e) => h("option", { value: e.id }, e.name))) : null,
+      h("optgroup", { label: "Library" }, library.map((e) => h("option", { value: e.id }, e.name))));
+    exSelect.value = item.exercise_id;
+    exSelect.addEventListener("change", () => { item.exercise_id = exSelect.value; renderList(); });
+
+    const move = (d) => {
+      [items[i], items[i + d]] = [items[i + d], items[i]];
+      renderList();
+    };
+    const ex = byId[item.exercise_id];
+    const targets = ex
+      ? TARGET_FIELDS[ex.tracking_type].map((key) => {
+          const { label, attrs } = TARGET_INPUTS[key];
+          const l = key === "weight_kg" && ex.tracking_type !== "weight_reps" ? "Added weight (kg)" : label;
+          return field(l, bind(item, key, attrs));
+        })
+      : [];
+
+    return h("div.card.stack", {},
+      h("div.row", { style: "align-items:center" },
+        exSelect,
+        h("div.actions", {},
+          h("button.icon", { type: "button", "aria-label": "Move up", title: "Move up", disabled: i === 0, onclick: () => move(-1) }, "↑"),
+          h("button.icon", { type: "button", "aria-label": "Move down", title: "Move down", disabled: i === items.length - 1, onclick: () => move(1) }, "↓"),
+          h("button.icon", { type: "button", "aria-label": "Remove", title: "Remove", onclick: () => { items.splice(i, 1); renderList(); } }, "×"))),
+      ex ? h("div.row.wrap", {},
+        field("Sets", bind(item, "sets", { type: "number", inputmode: "numeric", min: 1, max: 20, required: true })),
+        ...targets) : null,
+      ex ? bind(item, "notes", { maxlength: 200, placeholder: "Notes (e.g. pause at the bottom)" }) : null,
+    );
+  }
+
+  function renderList() {
+    list.replaceChildren(
+      ...items.map(row),
+      h("button.block", { type: "button", onclick: () => { items.push(blank()); renderList(); } }, "+ Add exercise"));
+  }
+  renderList();
+
+  // Rows without an exercise are skipped; only the targets the exercise's
+  // tracking type uses are sent.
+  function exerciseBodies() {
+    const out = [];
+    items.forEach((it, i) => {
+      const ex = byId[it.exercise_id];
+      if (!ex) return;
+      const keys = TARGET_FIELDS[ex.tracking_type];
+      const has = (k) => keys.includes(k) && it[k].trim() !== "";
+      const body = { exercise_id: ex.id, target_sets: parseInt(it.sets, 10), notes: it.notes.trim() || undefined };
+      if (has("reps")) {
+        const r = parseReps(it.reps);
+        if (!r) throw new Error(`Exercise ${i + 1}: reps must look like 8 or 8-12`);
+        [body.target_reps_min, body.target_reps_max] = r;
+      }
+      if (has("weight_kg")) body.target_weight_kg = parseFloat(it.weight_kg);
+      if (has("duration")) body.target_duration_seconds = parseDuration(it.duration);
+      if (has("distance_m")) body.target_distance_m = parseFloat(it.distance_m);
+      out.push(body);
+    });
+    return out;
+  }
+
+  const saveBtn = h("button.primary.block", { type: "submit" }, id ? "Save" : "Create template");
+  const form = h("form.stack", {
+    onsubmit: async (e) => {
+      e.preventDefault();
+      saveBtn.disabled = true;
+      try {
+        const body = { name: name.value.trim(), notes: notes.value, exercises: exerciseBodies() };
+        await (id ? api("PUT", "/templates/" + id, body) : api("POST", "/templates", body));
+        toast("Saved");
+        go("#/templates");
+      } catch (ex) {
+        fail(ex);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    },
+  },
+    h("div.card.stack", {}, field("Name", name), field("Notes", notes)),
+    h("h2.section", {}, "Exercises"),
+    list,
+    saveBtn,
+  );
+
+  const extra = id ? [
+    h("button.block", { style: "margin-top:12px", onclick: () => startTemplate(t) }, "Start workout from this template"),
+    h("button.danger.block", {
+      style: "margin-top:12px",
+      onclick: async () => {
+        if (!confirm(`Delete template "${t.name}"?\n\nWorkouts you started from it are kept.`)) return;
+        try {
+          await api("DELETE", "/templates/" + id);
+          toast("Deleted");
+          go("#/templates");
+        } catch (ex) { fail(ex); }
+      },
+    }, "Delete template"),
+  ] : [];
+
+  render(
+    h("p", {}, h("a.muted.small", { href: "#/templates" }, "← All templates")),
+    h("h1", {}, id ? "Edit template" : "New template"),
+    form,
+    ...extra,
   );
 }
 

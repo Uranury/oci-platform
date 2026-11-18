@@ -9,7 +9,7 @@ import (
 
 // NewRouter wires the API routes and serves the frontend (static files from
 // webFS) at "/" for every GET path no API route claims.
-func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *WorkoutHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
+func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *WorkoutHandler, templateH *TemplateHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /auth/register", authH.Register)
@@ -33,6 +33,14 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	mux.HandleFunc("DELETE /workouts/{id}", requireAuth(jwtIssuer, workoutH.DeleteWorkout))
 	mux.HandleFunc("POST /workouts/{id}/sets", requireAuth(jwtIssuer, workoutH.AddSet))
 	mux.HandleFunc("DELETE /workouts/{id}/sets/{setID}", requireAuth(jwtIssuer, workoutH.DeleteSet))
+	mux.HandleFunc("POST /workouts/{id}/save-as-template", requireAuth(jwtIssuer, templateH.FromWorkout))
+
+	mux.HandleFunc("GET /templates", requireAuth(jwtIssuer, templateH.List))
+	mux.HandleFunc("POST /templates", requireAuth(jwtIssuer, templateH.Create))
+	mux.HandleFunc("GET /templates/{id}", requireAuth(jwtIssuer, templateH.Get))
+	mux.HandleFunc("PUT /templates/{id}", requireAuth(jwtIssuer, templateH.Update))
+	mux.HandleFunc("DELETE /templates/{id}", requireAuth(jwtIssuer, templateH.Delete))
+	mux.HandleFunc("POST /templates/{id}/start", requireAuth(jwtIssuer, templateH.Start))
 
 	mux.Handle("GET /", http.FileServerFS(webFS))
 

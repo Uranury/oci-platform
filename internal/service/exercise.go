@@ -102,8 +102,8 @@ func (s *ExerciseService) Update(ctx context.Context, userID, id uuid.UUID, in E
 	return e, nil
 }
 
-// Delete removes a custom exercise. One with logged sets is archived
-// instead (hidden from the picker, still resolving in history); archived
+// Delete removes a custom exercise. One with logged sets or used by a
+// template is archived instead (hidden from the picker, still resolving in history); archived
 // reports which happened.
 func (s *ExerciseService) Delete(ctx context.Context, userID, id uuid.UUID) (archived bool, err error) {
 	if _, err := s.owned(ctx, userID, id); err != nil {

@@ -1,6 +1,6 @@
 -- name: CreateWorkout :one
-INSERT INTO workouts (user_id, name, notes, performed_at)
-VALUES (@user_id, @name, @notes, @performed_at)
+INSERT INTO workouts (user_id, name, notes, performed_at, template_id)
+VALUES (@user_id, @name, @notes, @performed_at, @template_id)
 RETURNING *;
 
 -- name: GetWorkout :one

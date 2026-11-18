@@ -56,6 +56,7 @@ func run() error {
 	exerciseRepo := repo.NewExercise(pool)
 	workoutRepo := repo.NewWorkout(pool)
 	workoutSetRepo := repo.NewWorkoutSet(pool)
+	templateRepo := repo.NewTemplate(pool)
 	txProvider := dbutil.NewTxProvider(pool)
 
 	// After migrations, so the library columns exist.
@@ -68,17 +69,19 @@ func run() error {
 	authService := service.NewAuthService(userRepo, refreshTokenRepo, txProvider, jwtIssuer, cfg.RefreshTokenTTL)
 	exerciseService := service.NewExerciseService(exerciseRepo)
 	workoutService := service.NewWorkoutService(exerciseRepo, workoutRepo, workoutSetRepo)
+	templateService := service.NewTemplateService(txProvider, templateRepo, exerciseRepo, workoutRepo, workoutSetRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	exerciseHandler := handler.NewExerciseHandler(exerciseService)
 	workoutHandler := handler.NewWorkoutHandler(workoutService)
+	templateHandler := handler.NewTemplateHandler(templateService)
 
 	webFS, err := web.Static()
 	if err != nil {
 		return err
 	}
 
-	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, jwtIssuer, webFS)
+	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, templateHandler, jwtIssuer, webFS)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.ListenHost, cfg.Port),
