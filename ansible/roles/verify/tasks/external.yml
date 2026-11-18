@@ -102,9 +102,40 @@
     headers:
       Authorization: "Bearer {{ verify_login.json.access_token }}"
     body_format: json
-    body: { name: "{{ verify_exercise_name }}" }
+    body:
+      name: "{{ verify_exercise_name }}"
+      movement_pattern: horizontal_push
+      primary_muscle: chest
+      secondary_muscles: [triceps]
+      mechanic: compound
+      equipment: barbell
+      tracking_type: weight_reps
     status_code: 201
   register: verify_exercise
+  no_log: true
+
+- name: "API: list exercises"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/exercises"
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+  register: verify_exercises
+  no_log: true
+
+- name: "API: the seeded library is there next to the custom exercise"
+  ansible.builtin.assert:
+    that:
+      - (verify_exercises.json | selectattr('slug', 'defined') | map(attribute='slug') | list) is superset(['bench-press', 'back-squat', 'pull-up'])
+      - verify_exercise_name in (verify_exercises.json | rejectattr('system') | map(attribute='name') | list)
+    quiet: true
+
+- name: "API: a default exercise is read-only"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/exercises/{{ (verify_exercises.json | selectattr('slug', 'defined') | selectattr('slug', 'equalto', 'pull-up') | first).id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    status_code: 403
   no_log: true
 
 - name: "API: create a workout"
@@ -133,6 +164,19 @@
     status_code: 201
   no_log: true
 
+- name: "API: log a bodyweight set on the seeded pull-up"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/workouts/{{ verify_workout.json.id }}/sets"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ verify_login.json.access_token }}"
+    body_format: json
+    body:
+      exercise_id: "{{ (verify_exercises.json | selectattr('slug', 'defined') | selectattr('slug', 'equalto', 'pull-up') | first).id }}"
+      reps: 8
+    status_code: 201
+  no_log: true
+
 - name: "API: list workouts"
   ansible.builtin.uri:
     url: "{{ verify_base }}/workouts"
@@ -153,10 +197,12 @@
   ansible.builtin.assert:
     that:
       - verify_workout.json.id in (verify_workouts.json | map(attribute='id') | list)
-      - verify_workout_detail.json.sets | length == 1
+      - verify_workout_detail.json.sets | length == 2
       - verify_workout_detail.json.sets[0].exercise_name == verify_exercise_name
       - verify_workout_detail.json.sets[0].reps == 5
       - verify_workout_detail.json.sets[0].weight_kg | float == 62.5
+      - verify_workout_detail.json.sets[1].exercise_name == 'Pull-up'
+      - verify_workout_detail.json.sets[1].weight_kg is none
     quiet: true
 
 - name: "API: delete the workout"

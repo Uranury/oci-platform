@@ -25,24 +25,31 @@ func NewWorkoutSet(exec dbutil.Executor) WorkoutSet {
 	return &workoutSet{exec: exec}
 }
 
+// The join resolves archived exercises too, so history keeps its names.
+const setSelect = `SELECT s.id, s.workout_id, s.exercise_id, e.name, e.tracking_type,
+	s.reps, s.weight_kg, s.duration_seconds, s.distance_m, s.created_at
+	FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id`
+
+func scanSet(row pgx.Row, m *models.WorkoutSet) error {
+	return row.Scan(&m.ID, &m.WorkoutID, &m.ExerciseID, &m.ExerciseName, &m.ExerciseTrackingType,
+		&m.Reps, &m.WeightKg, &m.DurationSeconds, &m.DistanceM, &m.CreatedAt)
+}
+
 func (r *workoutSet) Create(ctx context.Context, m *models.WorkoutSet) error {
 	err := r.exec.QueryRow(ctx,
-		`INSERT INTO workout_sets (workout_id, exercise_id, reps, weight_kg)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO workout_sets (workout_id, exercise_id, reps, weight_kg, duration_seconds, distance_m)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, created_at,
-		   (SELECT name FROM exercises WHERE id = $2)`,
-		m.WorkoutID, m.ExerciseID, m.Reps, m.WeightKg,
-	).Scan(&m.ID, &m.CreatedAt, &m.ExerciseName)
+		   (SELECT name FROM exercises WHERE id = $2),
+		   (SELECT tracking_type FROM exercises WHERE id = $2)`,
+		m.WorkoutID, m.ExerciseID, m.Reps, m.WeightKg, m.DurationSeconds, m.DistanceM,
+	).Scan(&m.ID, &m.CreatedAt, &m.ExerciseName, &m.ExerciseTrackingType)
 	return translatePgError(err)
 }
 
 func (r *workoutSet) GetByID(ctx context.Context, id uuid.UUID) (*models.WorkoutSet, error) {
 	var m models.WorkoutSet
-	err := r.exec.QueryRow(ctx,
-		`SELECT s.id, s.workout_id, s.exercise_id, e.name, s.reps, s.weight_kg, s.created_at
-		 FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
-		 WHERE s.id = $1`, id,
-	).Scan(&m.ID, &m.WorkoutID, &m.ExerciseID, &m.ExerciseName, &m.Reps, &m.WeightKg, &m.CreatedAt)
+	err := scanSet(r.exec.QueryRow(ctx, setSelect+` WHERE s.id = $1`, id), &m)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -53,11 +60,7 @@ func (r *workoutSet) GetByID(ctx context.Context, id uuid.UUID) (*models.Workout
 }
 
 func (r *workoutSet) ListByWorkout(ctx context.Context, workoutID uuid.UUID) ([]models.WorkoutSet, error) {
-	rows, err := r.exec.Query(ctx,
-		`SELECT s.id, s.workout_id, s.exercise_id, e.name, s.reps, s.weight_kg, s.created_at
-		 FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
-		 WHERE s.workout_id = $1 ORDER BY s.created_at`, workoutID,
-	)
+	rows, err := r.exec.Query(ctx, setSelect+` WHERE s.workout_id = $1 ORDER BY s.created_at`, workoutID)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +69,7 @@ func (r *workoutSet) ListByWorkout(ctx context.Context, workoutID uuid.UUID) ([]
 	var out []models.WorkoutSet
 	for rows.Next() {
 		var m models.WorkoutSet
-		if err := rows.Scan(&m.ID, &m.WorkoutID, &m.ExerciseID, &m.ExerciseName, &m.Reps, &m.WeightKg, &m.CreatedAt); err != nil {
+		if err := scanSet(rows, &m); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

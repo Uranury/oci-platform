@@ -15,6 +15,7 @@ import (
 	"github.com/Uranury/oci-platform/internal/db"
 	"github.com/Uranury/oci-platform/internal/handler"
 	"github.com/Uranury/oci-platform/internal/repo"
+	"github.com/Uranury/oci-platform/internal/seed"
 	"github.com/Uranury/oci-platform/internal/service"
 	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/Uranury/oci-platform/web"
@@ -57,12 +58,19 @@ func run() error {
 	workoutSetRepo := repo.NewWorkoutSet(pool)
 	txProvider := dbutil.NewTxProvider(pool)
 
+	// After migrations, so the library columns exist.
+	if err := seed.Sync(ctx, txProvider); err != nil {
+		return err
+	}
+
 	jwtIssuer := auth.NewJWTIssuer(cfg.JWTSecret, cfg.AccessTokenTTL)
 
 	authService := service.NewAuthService(userRepo, refreshTokenRepo, txProvider, jwtIssuer, cfg.RefreshTokenTTL)
+	exerciseService := service.NewExerciseService(exerciseRepo)
 	workoutService := service.NewWorkoutService(exerciseRepo, workoutRepo, workoutSetRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
+	exerciseHandler := handler.NewExerciseHandler(exerciseService)
 	workoutHandler := handler.NewWorkoutHandler(workoutService)
 
 	webFS, err := web.Static()
@@ -70,7 +78,7 @@ func run() error {
 		return err
 	}
 
-	router := handler.NewRouter(authHandler, workoutHandler, jwtIssuer, webFS)
+	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, jwtIssuer, webFS)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.ListenHost, cfg.Port),
