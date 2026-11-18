@@ -144,3 +144,10 @@ h2.section { margin: 24px 0 8px; font-size: 15px; text-transform: uppercase; let
 button.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 .actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .list li > div:first-child { min-width: 0; }
+
+.row.wrap { flex-wrap: wrap; }
+.row.wrap > * { flex: 1 1 90px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.card-head h2 { margin: 0; }
+.plan-meta { margin: 4px 0 0; }
+.list.card { padding: 0 14px; }

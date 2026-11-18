@@ -36,6 +36,20 @@ type RefreshToken struct {
 	CreatedAt time.Time
 }
 
+type TemplateExercise struct {
+	ID                    uuid.UUID
+	TemplateID            uuid.UUID
+	ExerciseID            uuid.UUID
+	Position              int
+	TargetSets            int
+	TargetRepsMin         *int
+	TargetRepsMax         *int
+	TargetWeightKg        *float64
+	TargetDurationSeconds *int
+	TargetDistanceM       *float64
+	Notes                 *string
+}
+
 type User struct {
 	ID        uuid.UUID
 	Username  string
@@ -53,6 +67,7 @@ type Workout struct {
 	PerformedAt time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	TemplateID  *uuid.UUID
 }
 
 type WorkoutSet struct {
@@ -64,4 +79,13 @@ type WorkoutSet struct {
 	CreatedAt       time.Time
 	DurationSeconds *int
 	DistanceM       *float64
+}
+
+type WorkoutTemplate struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Name      string
+	Notes     *string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

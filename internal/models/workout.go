@@ -85,6 +85,9 @@ type Workout struct {
 	Name        *string   `json:"name,omitempty" db:"name"`
 	Notes       *string   `json:"notes,omitempty" db:"notes"`
 	PerformedAt time.Time `json:"performed_at" db:"performed_at"`
+	// TemplateID is the template the workout was started from, if any (nil
+	// also once that template is deleted).
+	TemplateID *uuid.UUID `json:"template_id,omitempty" db:"template_id"`
 
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`

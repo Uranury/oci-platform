@@ -28,13 +28,14 @@ func NewWorkout(exec dbutil.Executor) Workout {
 func toWorkout(r dbgen.Workout) models.Workout {
 	return models.Workout{
 		ID: r.ID, UserID: r.UserID, Name: r.Name, Notes: r.Notes, PerformedAt: r.PerformedAt,
-		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TemplateID: r.TemplateID, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
 
 func (r *workout) Create(ctx context.Context, m *models.Workout) error {
 	row, err := r.q.CreateWorkout(ctx, dbgen.CreateWorkoutParams{
 		UserID: m.UserID, Name: m.Name, Notes: m.Notes, PerformedAt: m.PerformedAt,
+		TemplateID: m.TemplateID,
 	})
 	if err != nil {
 		return translate(err)

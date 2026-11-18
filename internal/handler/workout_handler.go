@@ -53,6 +53,8 @@ func writeLookupError(w http.ResponseWriter, err error, what string) {
 		writeError(w, http.StatusForbidden, "default exercises are read-only; duplicate it to customize")
 	case errors.Is(err, service.ErrExerciseExists):
 		writeError(w, http.StatusConflict, "you already have an exercise with that name")
+	case errors.Is(err, service.ErrTemplateExists):
+		writeError(w, http.StatusConflict, "you already have a template with that name")
 	case errors.Is(err, service.ErrExerciseArchived):
 		writeError(w, http.StatusConflict, "exercise is archived")
 	default:
