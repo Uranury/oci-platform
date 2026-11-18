@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func TestFinishWorkoutOtherUser(t *testing.T) {
 	svc := NewWorkoutService(nil, store, nil)
 	id := newWorkout(t, store, uuid.New(), time.Now().Add(-time.Hour), nil)
 
-	if _, err := svc.FinishWorkout(context.Background(), uuid.New(), id); err != ErrForbidden {
+	if _, err := svc.FinishWorkout(context.Background(), uuid.New(), id); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("err = %v, want ErrForbidden", err)
 	}
 	if store[id].FinishedAt != nil {
