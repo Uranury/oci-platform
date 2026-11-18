@@ -16,7 +16,7 @@ func TestSimilarNames(t *testing.T) {
 		{"Bench", "Bench press", true}, // contained
 		{"Squat", "Back squat", true},
 		{"Incline bench press", "Bench press", true},
-		{"Deadlfit", "Deadlift", true}, // transposition = 2 edits; allowed for 8+ chars
+		{"Hip thrsut", "Hip thrust", true}, // transposition = 2 edits; allowed for 8+ chars
 		{"Leg curl", "Dumbbell curl", false},
 		{"Row", "Barbell row", false}, // too short to count as contained
 		{"Dip", "Deadlift", false},
