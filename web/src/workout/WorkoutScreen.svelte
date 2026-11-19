@@ -1,13 +1,7 @@
-<script lang="ts" module>
-  export interface Host {
-    // Shown by the screen navigated to (this one is gone by then).
-    toast: (msg: string) => void;
-  }
-</script>
-
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, ApiError } from "../lib/api";
+  import { flash } from "../lib/flash";
   import { code, fmtClock, fmtDay, fmtSession, toLocalInput } from "../lib/format";
   import { chip } from "../lib/sets";
   import type {
@@ -29,7 +23,7 @@
   import TabBar from "../ui/TabBar.svelte";
   import Toast, { type ToastMsg } from "../ui/Toast.svelte";
 
-  let { id, host }: { id: string; host: Host } = $props();
+  let { id }: { id: string } = $props();
 
   let workout = $state<Workout | null>(null);
   let exercises = $state<Exercise[]>([]);
@@ -246,7 +240,7 @@
     try {
       const done = await api<Workout>("POST", `/workouts/${id}/finish`);
       const n = workout.sets.length;
-      host.toast(
+      flash(
         `Workout saved · ${n} set${n === 1 ? "" : "s"}` +
           (done.finished_at ? " · " + fmtSession(done.performed_at, done.finished_at) : ""),
       );
@@ -262,7 +256,7 @@
     busy = true;
     try {
       await api("DELETE", `/workouts/${id}`);
-      host.toast(confirming === "discard" ? "Workout discarded" : "Workout deleted");
+      flash(confirming === "discard" ? "Workout discarded" : "Workout deleted");
       confirming = null;
       location.hash = "#/";
     } catch (e) {
@@ -277,7 +271,7 @@
     try {
       const t = await api<Template>("POST", `/workouts/${id}/save-as-template`, { name: templateName.trim() });
       naming = false;
-      host.toast(`Saved template “${t.name}”`);
+      flash(`Saved template “${t.name}”`);
       location.hash = `#/templates/${t.id}`;
     } catch (e) {
       fail(e);

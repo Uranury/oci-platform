@@ -56,6 +56,21 @@ function refreshTokens(): Promise<boolean> {
   return refreshing;
 }
 
+// Ends this device's session: the local tokens go at once; revoking the
+// refresh token on the server is best effort.
+export function logout(): void {
+  const rt = store.refresh;
+  store.clear();
+  if (rt) {
+    fetch("/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: rt }),
+    }).catch(() => {});
+  }
+  location.hash = "#/login";
+}
+
 interface Opts {
   auth?: boolean;
   retry?: boolean;

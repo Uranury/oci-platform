@@ -89,6 +89,21 @@ export function fmtAgo(iso: string, now = new Date()): string {
   return d.toLocaleDateString(LOCALE, { day: "numeric", month: "short" });
 }
 
+// "today", "yesterday", "6 days ago", then "12 Nov".
+export function fmtDaysAgo(iso: string, now = new Date()): string {
+  const days = Math.round((startOfDay(now) - startOfDay(new Date(iso))) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString(LOCALE, { day: "numeric", month: "short" });
+}
+
+// "Bench press, Overhead press, Dip +2": the first few names, then a count.
+export function fmtNames(names: string[], shown = 3): string {
+  if (names.length <= shown) return names.join(", ");
+  return `${names.slice(0, shown).join(", ")} +${names.length - shown}`;
+}
+
 export function fmtDay(iso: string): string {
   return new Date(iso).toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "short" });
 }

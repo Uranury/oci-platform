@@ -4,8 +4,9 @@
 // ---------- API ----------
 
 // Shared with the Svelte screens: one token store, one refresh in flight.
-import { api, store } from "../lib/api";
-import { hideScreen, showWorkout } from "../main";
+import { api, logout, store } from "../lib/api";
+import { takeFlash } from "../lib/flash";
+import { hideScreen, showScreen } from "../main";
 
 // ---------- DOM helpers ----------
 
@@ -55,22 +56,12 @@ function fmtDate(iso) {
   });
 }
 
-function fmtTime(iso) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
 
 
 function fmtWeight(kg) {
   return (Math.round(kg * 100) / 100).toString();
 }
 
-// Session length: "45 min", "1 h 05 min".
-function fmtSession(startIso, endIso) {
-  const min = Math.max(0, Math.round((new Date(endIso) - new Date(startIso)) / 60000));
-  if (min < 1) return "<1 min";
-  if (min < 60) return `${min} min`;
-  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
-}
 
 // "today", "yesterday", "3 days ago", then a date.
 function fmtAgo(iso) {
@@ -108,27 +99,35 @@ function go(hash) {
 function route() {
   const hash = location.hash || "#/";
   const loggedIn = !!store.access;
-  document.getElementById("topbar").hidden = !loggedIn || hash === "#/login";
-
   if (!loggedIn && hash !== "#/login") return go("#/login");
   if (loggedIn && hash === "#/login") return go("#/");
 
-  let m;
-  // Redesigned screens render through Svelte into #screen.
-  if ((m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/))) {
+  const topbar = document.getElementById("topbar");
+  const legacy = legacyView(hash);
+  if (!legacy) {
+    // Redesigned screens render through Svelte into #screen.
     app.hidden = true;
-    document.getElementById("topbar").hidden = true;
-    return showWorkout(document.getElementById("screen"), m[1], { toast });
+    topbar.hidden = true;
+    const m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/);
+    return showScreen(document.getElementById("screen"),
+      hash === "#/login" ? { kind: "login" } : m ? { kind: "workout", id: m[1] } : { kind: "home" });
   }
   hideScreen();
   app.hidden = false;
-  if (hash === "#/login") return viewLogin();
-  if (hash === "#/exercises") return nav("exercises"), viewExercises().catch(fail);
-  if (hash === "#/templates") return nav("templates"), viewTemplates().catch(fail);
-  if (hash === "#/templates/new") return nav("templates"), viewTemplate(null).catch(fail);
-  if ((m = hash.match(/^#\/templates\/([0-9a-f-]{36})$/))) return nav("templates"), viewTemplate(m[1]).catch(fail);
-  nav("workouts");
-  viewWorkouts().catch(fail);
+  topbar.hidden = false;
+  const f = takeFlash();
+  if (f) toast(f);
+  legacy();
+}
+
+// The screens still rendered by this file, or null for the Svelte ones.
+function legacyView(hash) {
+  let m;
+  if (hash === "#/exercises") return () => (nav("exercises"), viewExercises().catch(fail));
+  if (hash === "#/templates") return () => (nav("templates"), viewTemplates().catch(fail));
+  if (hash === "#/templates/new") return () => (nav("templates"), viewTemplate(null).catch(fail));
+  if ((m = hash.match(/^#\/templates\/([0-9a-f-]{36})$/))) return () => (nav("templates"), viewTemplate(m[1]).catch(fail));
+  return null;
 }
 
 function nav(active) {
@@ -139,123 +138,7 @@ function nav(active) {
 
 window.addEventListener("hashchange", route);
 
-document.getElementById("logout").addEventListener("click", async () => {
-  const rt = store.refresh;
-  store.clear();
-  if (rt) {
-    // Best effort: the local tokens are already gone either way.
-    fetch("/auth/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: rt }),
-    }).catch(() => {});
-  }
-  go("#/login");
-});
-
-// ---------- views: auth ----------
-
-function viewLogin() {
-  let mode = "login";
-  const err = h("p.error");
-  const username = h("input", { name: "username", autocomplete: "username", placeholder: "Username" });
-  const usernameField = h("div", {}, h("label", {}, "Username"), username);
-  const email = h("input", { type: "email", name: "email", autocomplete: "email", required: true });
-  const password = h("input", { type: "password", name: "password", autocomplete: "current-password", required: true, minlength: 8 });
-  const submit = h("button.primary.block", { type: "submit" }, "Log in");
-
-  const tabs = ["login", "register"].map((m) =>
-    h("button", { type: "button", "aria-pressed": String(m === mode), onclick: () => setMode(m) },
-      m === "login" ? "Log in" : "Sign up"));
-
-  function setMode(m) {
-    mode = m;
-    tabs.forEach((t, i) => t.setAttribute("aria-pressed", String(["login", "register"][i] === m)));
-    usernameField.hidden = m === "login";
-    username.required = m === "register";
-    password.autocomplete = m === "login" ? "current-password" : "new-password";
-    submit.textContent = m === "login" ? "Log in" : "Create account";
-    err.textContent = "";
-  }
-
-  const form = h("form.stack", {
-    onsubmit: async (e) => {
-      e.preventDefault();
-      err.textContent = "";
-      submit.disabled = true;
-      try {
-        if (mode === "register") {
-          await api("POST", "/auth/register",
-            { username: username.value.trim(), email: email.value.trim(), password: password.value },
-            { auth: false });
-        }
-        const pair = await api("POST", "/auth/login",
-          { email: email.value.trim(), password: password.value }, { auth: false });
-        store.set(pair);
-        go("#/");
-      } catch (ex) {
-        err.textContent = ex.message;
-      } finally {
-        submit.disabled = false;
-      }
-    },
-  },
-    usernameField,
-    h("div", {}, h("label", {}, "Email"), email),
-    h("div", {}, h("label", {}, "Password"), password),
-    err,
-    submit,
-  );
-
-  setMode("login");
-  render(h("div.auth", {}, h("span.brand", {}, "Lift Log"), h("div.tabs", {}, tabs), form));
-}
-
-// ---------- views: workouts list ----------
-
-async function viewWorkouts() {
-  const start = h("button.primary.block", {
-    onclick: async () => {
-      start.disabled = true;
-      try {
-        const w = await api("POST", "/workouts", {});
-        go("#/workouts/" + w.id);
-      } catch (e) {
-        fail(e);
-        start.disabled = false;
-      }
-    },
-  }, "+ Start workout");
-
-  render(h("h1", {}, "Workouts"), start, h("p.muted", {}, "Loading…"));
-  const [workouts, templates] = await Promise.all([api("GET", "/workouts"), api("GET", "/templates")]);
-
-  const fromTemplate = templates.length
-    ? [h("h2.section", {}, "Start from a template"),
-       h("ul.list.card", {}, templates.map((t) => {
-         const btn = h("button.small", { onclick: () => startTemplate(t, btn) }, "Start");
-         return h("li", {},
-           h("div", {}, h("div", {}, t.name), h("div.muted.small", {}, templateMeta(t))),
-           btn);
-       }))]
-    : [];
-
-  const items = workouts.length
-    ? workouts.map((w) =>
-        h("a.workout-item", { href: "#/workouts/" + w.id },
-          h("div.title", {}, w.name || "Workout"),
-          h("div.muted.small", {}, fmtDate(w.performed_at) + " · " + fmtTime(w.performed_at) +
-            (w.finished_at ? " · " + fmtSession(w.performed_at, w.finished_at) : ""))))
-    : [h("p.muted.empty", {}, "No workouts yet. Start your first one.")];
-
-  render(
-    h("h1", {}, "Workouts"),
-    h("div", { style: "margin-bottom:16px" }, start),
-    ...fromTemplate,
-    templates.length || workouts.length ? h("h2.section", {}, "History") : null,
-    ...items,
-  );
-}
+document.getElementById("logout").addEventListener("click", logout);
 
 // ---------- exercise library helpers ----------
 
