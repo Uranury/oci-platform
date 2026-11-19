@@ -1,0 +1,84 @@
+/* The redesign's world: newsprint, one black ink, red spot ink for the
+   progress route, biro blue for hand marks. Scoped to .catalog so the
+   legacy screens keep their own styles until they're redone. */
+
+@font-face {
+  font-family: "League Gothic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/league-gothic-400-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "League Gothic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/league-gothic-400-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("../assets/fonts/spline-sans-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("../assets/fonts/spline-sans-mono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+body.catalog-body {
+  --paper: #dedad1;
+  --paper-hi: #e8e5de; /* raised panels: same paper, less grey */
+  --ink: #1c1b19;
+  --ink-2: #45423b; /* secondary text, 7.6:1 on paper */
+  --rule: #1c1b1966;
+  --red: #c2372b; /* the route, and nothing else */
+  --biro: #24399a; /* hand marks and focus */
+
+  --gothic: "League Gothic", "Arial Narrow", sans-serif;
+  --mono: "Spline Sans Mono", ui-monospace, monospace;
+
+  --r: 6px;
+  --line: 1.5px solid var(--ink);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px/1.4 var(--mono);
+  font-variant-numeric: tabular-nums;
+  caret-color: var(--biro);
+  accent-color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+  scrollbar-color: var(--ink-2) var(--paper);
+}
+
+body.catalog-body ::selection {
+  background: var(--biro);
+  color: var(--paper);
+}
+
+body.catalog-body :focus-visible {
+  outline: 2px solid var(--biro);
+  outline-offset: 2px;
+}
+
+/* :where() keeps these resets at zero specificity, so component styles win. */
+:where(body.catalog-body) :where(button, input, textarea, select) {
+  font: inherit;
+  color: inherit;
+}
+
+:where(body.catalog-body) :where(a) {
+  color: inherit;
+  text-underline-offset: 3px;
+}
