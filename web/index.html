@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111214">
   <title>Lift Log</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/src/legacy/style.css">
 </head>
 <body>
   <header class="topbar" id="topbar" hidden>
@@ -20,6 +20,7 @@
   </header>
   <main id="app"></main>
   <div id="toast" class="toast" hidden></div>
-  <script src="/app.js"></script>
+  <!-- The pre-redesign frontend, bundled as-is; screens move to Svelte (src/) as they're redesigned. -->
+  <script type="module" src="/src/legacy/app.js"></script>
 </body>
 </html>

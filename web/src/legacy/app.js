@@ -1,6 +1,6 @@
 "use strict";
 
-// Lift Log frontend: plain JS, no build step. Hash routing:
+// Lift Log frontend (pre-redesign): plain JS, bundled as-is by Vite. Hash routing:
 //   #/login  #/  #/workouts/<id>  #/templates  #/templates/<id|new>  #/exercises
 
 // ---------- tokens ----------
