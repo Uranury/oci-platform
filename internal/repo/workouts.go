@@ -12,7 +12,8 @@ import (
 type Workout interface {
 	Create(ctx context.Context, w *models.Workout) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Workout, error)
-	ListByUser(ctx context.Context, userID uuid.UUID) ([]models.Workout, error)
+	// ListByUser returns the user's workouts newest first, with summaries.
+	ListByUser(ctx context.Context, userID uuid.UUID) ([]models.WorkoutSummary, error)
 	Update(ctx context.Context, w *models.Workout) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -53,14 +54,14 @@ func (r *workout) GetByID(ctx context.Context, id uuid.UUID) (*models.Workout, e
 	return &w, nil
 }
 
-func (r *workout) ListByUser(ctx context.Context, userID uuid.UUID) ([]models.Workout, error) {
+func (r *workout) ListByUser(ctx context.Context, userID uuid.UUID) ([]models.WorkoutSummary, error) {
 	rows, err := r.q.ListWorkoutsByUser(ctx, userID)
 	if err != nil {
 		return nil, translate(err)
 	}
-	out := make([]models.Workout, len(rows))
+	out := make([]models.WorkoutSummary, len(rows))
 	for i, row := range rows {
-		out[i] = toWorkout(row)
+		out[i] = models.WorkoutSummary{Workout: toWorkout(row.Workout), SetCount: row.SetCount, Exercises: row.ExerciseNames}
 	}
 	return out, nil
 }

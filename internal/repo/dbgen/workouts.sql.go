@@ -83,28 +83,51 @@ func (q *Queries) GetWorkout(ctx context.Context, id uuid.UUID) (Workout, error)
 }
 
 const listWorkoutsByUser = `-- name: ListWorkoutsByUser :many
-SELECT id, user_id, name, notes, performed_at, created_at, updated_at, template_id, finished_at FROM workouts WHERE user_id = $1 ORDER BY performed_at DESC
+SELECT w.id, w.user_id, w.name, w.notes, w.performed_at, w.created_at, w.updated_at, w.template_id, w.finished_at,
+    (SELECT count(*) FROM workout_sets s WHERE s.workout_id = w.id)::int AS set_count,
+    coalesce((
+        SELECT array_agg(x.name ORDER BY x.first_at, x.name)
+        FROM (
+            SELECT e.name, min(s.created_at) AS first_at
+            FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
+            WHERE s.workout_id = w.id
+            GROUP BY e.id, e.name
+        ) x
+    ), '{}')::text[] AS exercise_names
+FROM workouts w
+WHERE w.user_id = $1
+ORDER BY w.performed_at DESC
 `
 
-func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID uuid.UUID) ([]Workout, error) {
+type ListWorkoutsByUserRow struct {
+	Workout       Workout
+	SetCount      int
+	ExerciseNames []string
+}
+
+// Newest first, each with a summary for the history list: how many sets
+// were logged and which exercises, in the order first logged.
+func (q *Queries) ListWorkoutsByUser(ctx context.Context, userID uuid.UUID) ([]ListWorkoutsByUserRow, error) {
 	rows, err := q.db.Query(ctx, listWorkoutsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Workout{}
+	items := []ListWorkoutsByUserRow{}
 	for rows.Next() {
-		var i Workout
+		var i ListWorkoutsByUserRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Name,
-			&i.Notes,
-			&i.PerformedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.TemplateID,
-			&i.FinishedAt,
+			&i.Workout.ID,
+			&i.Workout.UserID,
+			&i.Workout.Name,
+			&i.Workout.Notes,
+			&i.Workout.PerformedAt,
+			&i.Workout.CreatedAt,
+			&i.Workout.UpdatedAt,
+			&i.Workout.TemplateID,
+			&i.Workout.FinishedAt,
+			&i.SetCount,
+			&i.ExerciseNames,
 		); err != nil {
 			return nil, err
 		}

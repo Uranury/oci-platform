@@ -43,7 +43,7 @@ All request/response bodies are JSON.
 | PUT    | `/exercises/{id}` | Bearer | Edit your custom exercise (403 for defaults) |
 | DELETE | `/exercises/{id}` | Bearer | Delete your custom exercise; archived instead if it has logged sets (`{"result":"deleted"\|"archived"}`) |
 | POST   | `/exercises/{id}/duplicate` | Bearer | Copy a default (or your own) into a new custom exercise; optional `{"name"}` |
-| GET    | `/workouts`       | Bearer | List your workouts, newest first    |
+| GET    | `/workouts`       | Bearer | List your workouts, newest first, each with `set_count` and `exercises` (names, in the order first logged) |
 | POST   | `/workouts`       | Bearer | Start a workout (`{"name"?, "notes"?, "performed_at"?}`; date defaults to now) |
 | GET    | `/workouts/{id}`  | Bearer | Get a workout with its sets         |
 | PUT    | `/workouts/{id}`  | Bearer | Update name, notes, date            |

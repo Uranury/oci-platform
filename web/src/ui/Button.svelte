@@ -6,14 +6,17 @@
   // ghost: secondary actions (ruled outline).
   // danger: destructive actions, deliberately quiet (underlined text);
   //   place it apart from the primary action, never beside it.
+  // With href it renders as a link styled the same (navigation, not an action).
   let {
     variant = "ghost",
     size = "md",
     wide = false,
     type = "button",
+    href,
     children,
     ...rest
   }: HTMLButtonAttributes & {
+    href?: string;
     variant?: "ink" | "ghost" | "danger";
     size?: "sm" | "md" | "lg";
     wide?: boolean;
@@ -21,7 +24,11 @@
   } = $props();
 </script>
 
-<button {type} class="btn {variant} {size}" class:wide {...rest}>{@render children()}</button>
+{#if href}
+  <a {href} class="btn {variant} {size}" class:wide>{@render children()}</a>
+{:else}
+  <button {type} class="btn {variant} {size}" class:wide {...rest}>{@render children()}</button>
+{/if}
 
 <style>
   .btn {
@@ -37,6 +44,8 @@
     text-transform: uppercase;
     cursor: pointer;
     touch-action: manipulation;
+    text-decoration: none;
+    box-sizing: border-box;
   }
   .sm {
     min-height: 44px;

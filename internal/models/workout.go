@@ -96,6 +96,15 @@ type Workout struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// WorkoutSummary is a workout as listed in the history: the workout plus
+// how many sets it has and which exercises, in the order first logged.
+// Embedding keeps the JSON flat (the Workout fields plus these two).
+type WorkoutSummary struct {
+	Workout
+	SetCount  int      `json:"set_count"`
+	Exercises []string `json:"exercises"`
+}
+
 // WorkoutSet is a single set inside a workout. Which measurements are set
 // depends on the exercise's TrackingType at the time of logging (see
 // ValidateFor); the rest are nil. ExerciseName and ExerciseTrackingType

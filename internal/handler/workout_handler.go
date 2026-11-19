@@ -72,7 +72,7 @@ func (h *WorkoutHandler) ListWorkouts(c *gin.Context) {
 		return
 	}
 	if list == nil {
-		list = []models.Workout{}
+		list = []models.WorkoutSummary{}
 	}
 	c.JSON(http.StatusOK, list)
 }

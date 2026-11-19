@@ -26,6 +26,21 @@ export interface Workout {
   sets: WorkoutSet[];
 }
 
+// GET /workouts: a workout without its sets, plus a summary of them.
+export interface WorkoutSummary extends Omit<Workout, "sets"> {
+  set_count: number;
+  exercises: string[]; // names, in the order first logged
+}
+
+// GET /templates: most due first (never done, then longest since last use).
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  notes?: string | null;
+  exercise_count: number;
+  last_used_at?: string | null;
+}
+
 export interface Exercise {
   id: string;
   system: boolean;

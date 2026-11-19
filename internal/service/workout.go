@@ -42,7 +42,7 @@ func (s *WorkoutService) CreateWorkout(ctx context.Context, userID uuid.UUID, na
 	return w, nil
 }
 
-func (s *WorkoutService) ListWorkouts(ctx context.Context, userID uuid.UUID) ([]models.Workout, error) {
+func (s *WorkoutService) ListWorkouts(ctx context.Context, userID uuid.UUID) ([]models.WorkoutSummary, error) {
 	return s.workouts.ListByUser(ctx, userID)
 }
 

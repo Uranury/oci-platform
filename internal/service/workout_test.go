@@ -29,7 +29,7 @@ func (f fakeWorkouts) GetByID(_ context.Context, id uuid.UUID) (*models.Workout,
 	return &w, nil
 }
 
-func (f fakeWorkouts) ListByUser(context.Context, uuid.UUID) ([]models.Workout, error) {
+func (f fakeWorkouts) ListByUser(context.Context, uuid.UUID) ([]models.WorkoutSummary, error) {
 	return nil, nil
 }
 

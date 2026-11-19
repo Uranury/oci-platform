@@ -228,3 +228,45 @@ func TestTemplatesListMostDueFirst(t *testing.T) {
 		t.Errorf("order = %v, want %v", got, want)
 	}
 }
+
+func TestWorkoutListSummaries(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pool := testdb.New(t)
+	alice, bob := testdb.User(t, pool), testdb.User(t, pool)
+	bench := testdb.SystemExercise(t, pool, "bench-press")
+	squat := testdb.SystemExercise(t, pool, "back-squat")
+	now := time.Now()
+
+	// Squat logged first, then bench, then squat again: order is by first
+	// logged, not alphabetical, and squat is listed once.
+	older := testdb.Workout(t, pool, alice, now.Add(-48*time.Hour))
+	testdb.Set(t, pool, older.ID, squat.ID, 100, 5)
+	testdb.Set(t, pool, older.ID, bench.ID, 60, 8)
+	testdb.Set(t, pool, older.ID, squat.ID, 100, 5)
+	empty := testdb.Workout(t, pool, alice, now)
+	bobs := testdb.Workout(t, pool, bob, now.Add(-time.Hour))
+	testdb.Set(t, pool, bobs.ID, bench.ID, 200, 1)
+
+	got, err := repo.NewWorkout(pool).ListByUser(ctx, alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d workouts, want 2 (not bob's): %+v", len(got), got)
+	}
+	if got[0].ID != empty.ID || got[1].ID != older.ID {
+		t.Fatalf("order: got %s, %s; want newest first", got[0].ID, got[1].ID)
+	}
+	if got[0].SetCount != 0 || got[0].Exercises == nil || len(got[0].Exercises) != 0 {
+		t.Errorf("empty workout: set_count %d, exercises %#v; want 0 and an empty (non-nil) list",
+			got[0].SetCount, got[0].Exercises)
+	}
+	if got[1].SetCount != 3 {
+		t.Errorf("set_count %d, want 3", got[1].SetCount)
+	}
+	want := []string{squat.Name, bench.Name}
+	if len(got[1].Exercises) != 2 || got[1].Exercises[0] != want[0] || got[1].Exercises[1] != want[1] {
+		t.Errorf("exercises %v, want %v", got[1].Exercises, want)
+	}
+}
