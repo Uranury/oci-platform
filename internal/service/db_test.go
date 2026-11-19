@@ -26,7 +26,7 @@ func newServices(pool *pgxpool.Pool) services {
 	exercises, workouts, sets := repo.NewExercise(pool), repo.NewWorkout(pool), repo.NewWorkoutSet(pool)
 	return services{
 		exercises: service.NewExerciseService(exercises),
-		workouts:  service.NewWorkoutService(exercises, workouts, sets),
+		workouts:  service.NewWorkoutService(dbutil.NewTxProvider(pool), exercises, workouts, sets, repo.NewWorkoutExercise(pool)),
 		templates: service.NewTemplateService(dbutil.NewTxProvider(pool), repo.NewTemplate(pool), exercises, workouts, sets),
 	}
 }

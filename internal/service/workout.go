@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Uranury/oci-platform/internal/models"
 	"github.com/Uranury/oci-platform/internal/repo"
+	"github.com/Uranury/oci-platform/pkg/dbutil"
 	"github.com/google/uuid"
 )
 
@@ -15,17 +17,20 @@ import (
 // to leak whether the ID belongs to someone else.
 var ErrForbidden = errors.New("service: resource does not belong to user")
 
-// WorkoutService owns workouts and their sets. Every method is scoped to a
-// user. It reads exercises only to check that a set's exercise is visible to
-// the user and to validate the set against its tracking type.
+// WorkoutService owns workouts, their exercise lists and their sets. Every
+// method is scoped to a user. It reads exercises only to check that an
+// exercise is visible to the user and to validate a set against its tracking
+// type. Changes spanning a set and the exercise list run in one transaction.
 type WorkoutService struct {
+	tx        dbutil.TxProvider
 	exercises repo.Exercise
 	workouts  repo.Workout
 	sets      repo.WorkoutSet
+	list      repo.WorkoutExercise // outside transactions
 }
 
-func NewWorkoutService(exercises repo.Exercise, workouts repo.Workout, sets repo.WorkoutSet) *WorkoutService {
-	return &WorkoutService{exercises: exercises, workouts: workouts, sets: sets}
+func NewWorkoutService(tx dbutil.TxProvider, exercises repo.Exercise, workouts repo.Workout, sets repo.WorkoutSet, list repo.WorkoutExercise) *WorkoutService {
+	return &WorkoutService{tx: tx, exercises: exercises, workouts: workouts, sets: sets, list: list}
 }
 
 // --- workouts ---
@@ -69,7 +74,11 @@ func (s *WorkoutService) GetWorkout(ctx context.Context, userID, id uuid.UUID) (
 	if sets == nil {
 		sets = []models.WorkoutSet{}
 	}
-	return &models.WorkoutDetail{Workout: *w, Sets: sets}, nil
+	exercises, err := s.workoutExercises(nil).List(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &models.WorkoutDetail{Workout: *w, Exercises: exercises, Sets: sets}, nil
 }
 
 // PreviousSets returns "last time" for every exercise: the sets from the
@@ -177,7 +186,15 @@ func (s *WorkoutService) AddSet(ctx context.Context, userID, workoutID, exercise
 	if err := s.checkSet(ctx, userID, set, in, uuid.Nil); err != nil {
 		return nil, err
 	}
-	if err := s.sets.Create(ctx, set); err != nil {
+	// The set and its exercise's place in the list (appended if new) commit
+	// together.
+	err := s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		if err := repo.NewWorkoutSet(exec).Create(ctx, set); err != nil {
+			return err
+		}
+		return s.workoutExercises(exec).Append(ctx, workoutID, exerciseID, nil)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return set, nil
@@ -202,10 +219,151 @@ func (s *WorkoutService) UpdateSet(ctx context.Context, userID, workoutID, setID
 	if err := s.checkSet(ctx, userID, set, in, cur.ExerciseID); err != nil {
 		return nil, err
 	}
-	if err := s.sets.Update(ctx, set); err != nil {
+	// Moving a set to another exercise lists that exercise too.
+	err = s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		if err := repo.NewWorkoutSet(exec).Update(ctx, set); err != nil {
+			return err
+		}
+		return s.workoutExercises(exec).Append(ctx, workoutID, exerciseID, nil)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return set, nil
+}
+
+// workoutExercises is the exercise-list repo inside the transaction exec,
+// or the pool-backed one outside a transaction (nil).
+func (s *WorkoutService) workoutExercises(exec dbutil.Executor) repo.WorkoutExercise {
+	if exec == nil {
+		return s.list
+	}
+	return repo.NewWorkoutExercise(exec)
+}
+
+// MaxRestoredSets bounds how many sets one AddExercise call may re-log.
+const MaxRestoredSets = 100
+
+// AddExerciseInput is what goes with an added exercise. All optional: a
+// plain add has none of it; undoing a removal brings back the plan, the
+// sets (re-logged in order) and the place in the list.
+type AddExerciseInput struct {
+	Plan     *models.TemplateExercise // targets, checked by the template rules
+	Sets     []SetInput               // checked like any logged set
+	Position *int                     // 0-based; clamped to the list
+}
+
+// AddExercise puts an exercise in the workout's list, at the end unless
+// in.Position says where; adding one already listed doesn't move or replan
+// it. Everything commits together, so an undone removal comes back whole
+// or not at all.
+func (s *WorkoutService) AddExercise(ctx context.Context, userID, workoutID, exerciseID uuid.UUID, in AddExerciseInput) error {
+	if _, err := s.getWorkout(ctx, userID, workoutID); err != nil {
+		return err
+	}
+	ex, err := s.exercises.GetVisible(ctx, userID, exerciseID)
+	if err != nil {
+		return err
+	}
+	if ex.ArchivedAt != nil {
+		return ErrExerciseArchived
+	}
+	if in.Plan != nil {
+		if err := in.Plan.ValidateFor(ex.TrackingType); err != nil {
+			return err
+		}
+	}
+	if len(in.Sets) > MaxRestoredSets {
+		return models.ValidationError(fmt.Sprintf("at most %d sets at once", MaxRestoredSets))
+	}
+	sets := make([]*models.WorkoutSet, len(in.Sets))
+	for i, si := range in.Sets {
+		sets[i] = &models.WorkoutSet{WorkoutID: workoutID, ExerciseID: exerciseID}
+		if err := s.checkSet(ctx, userID, sets[i], si, uuid.Nil); err != nil {
+			return err
+		}
+	}
+
+	return s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		list := s.workoutExercises(exec)
+		if err := list.Append(ctx, workoutID, exerciseID, in.Plan); err != nil {
+			return err
+		}
+		setRepo := repo.NewWorkoutSet(exec)
+		for _, set := range sets {
+			if err := setRepo.Create(ctx, set); err != nil {
+				return err
+			}
+		}
+		if in.Position == nil {
+			return nil
+		}
+		current, err := list.List(ctx, workoutID)
+		if err != nil {
+			return err
+		}
+		order := make([]uuid.UUID, 0, len(current))
+		for _, we := range current {
+			if we.ExerciseID != exerciseID {
+				order = append(order, we.ExerciseID)
+			}
+		}
+		at := min(max(*in.Position, 0), len(order))
+		order = append(order[:at], append([]uuid.UUID{exerciseID}, order[at:]...)...)
+		for i, id := range order {
+			if err := list.SetPosition(ctx, workoutID, id, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// RemoveExercise takes an exercise out of the workout together with its
+// logged sets, returning how many sets went.
+func (s *WorkoutService) RemoveExercise(ctx context.Context, userID, workoutID, exerciseID uuid.UUID) (int64, error) {
+	if _, err := s.getWorkout(ctx, userID, workoutID); err != nil {
+		return 0, err
+	}
+	var n int64
+	err := s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		var err error
+		n, err = s.workoutExercises(exec).Remove(ctx, workoutID, exerciseID)
+		return err
+	})
+	return n, err
+}
+
+// ReorderExercises sets the workout's exercise order. order must list
+// exactly the exercises the workout has, each once.
+func (s *WorkoutService) ReorderExercises(ctx context.Context, userID, workoutID uuid.UUID, order []uuid.UUID) error {
+	if _, err := s.getWorkout(ctx, userID, workoutID); err != nil {
+		return err
+	}
+	return s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		list := s.workoutExercises(exec)
+		current, err := list.List(ctx, workoutID)
+		if err != nil {
+			return err
+		}
+		listed := make(map[uuid.UUID]bool, len(current))
+		for _, we := range current {
+			listed[we.ExerciseID] = true
+		}
+		if len(order) != len(current) {
+			return models.ValidationError("order must list each of the workout's exercises once")
+		}
+		for i, id := range order {
+			if !listed[id] {
+				return models.ValidationError("order must list each of the workout's exercises once")
+			}
+			delete(listed, id) // a repeat now fails the check above
+			if err := list.SetPosition(ctx, workoutID, id, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // checkSet fills set's measurements from in and validates them against the

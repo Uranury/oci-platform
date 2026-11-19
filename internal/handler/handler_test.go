@@ -46,7 +46,7 @@ func newServerWithPool(t *testing.T) (http.Handler, *pgxpool.Pool) {
 	return handler.NewRouter(
 		handler.NewAuthHandler(service.NewAuthService(repo.NewUser(pool), repo.NewRefreshToken(pool), tx, jwt, time.Hour)),
 		handler.NewExerciseHandler(service.NewExerciseService(exercises)),
-		handler.NewWorkoutHandler(service.NewWorkoutService(exercises, workouts, sets)),
+		handler.NewWorkoutHandler(service.NewWorkoutService(tx, exercises, workouts, sets, repo.NewWorkoutExercise(pool))),
 		handler.NewTemplateHandler(service.NewTemplateService(tx, repo.NewTemplate(pool), exercises, workouts, sets)),
 		jwt,
 		fstest.MapFS{"index.html": {Data: []byte("<html>")}},
@@ -162,6 +162,9 @@ func TestOtherUsersGet404(t *testing.T) {
 		{"GET", e + "/history", nil},
 
 		{"GET", w, nil},
+		{"POST", w + "/exercises", map[string]any{"exercise_id": bench.ID}},
+		{"PUT", w + "/exercises", map[string]any{"exercise_ids": []string{ex.ID}}},
+		{"DELETE", w + "/exercises/" + ex.ID, nil},
 		{"PUT", w, map[string]any{"name": "Hijacked"}},
 		{"DELETE", w, nil},
 		{"POST", w + "/finish", nil},
@@ -325,5 +328,165 @@ func TestExerciseLastAndHistory(t *testing.T) {
 	bob.must(http.StatusOK, "GET", "/exercises/last", nil, &bobLast)
 	if len(bobLast) != 0 {
 		t.Errorf("Bob's last sets include Alice's: %+v", bobLast)
+	}
+}
+
+// The workout's own exercise list: frozen from the template at start,
+// added to before any set, appended to by logging, reordered, removed.
+func TestWorkoutExerciseList(t *testing.T) {
+	t.Parallel()
+	h := newServer(t)
+	alice := signUp(t, h)
+
+	var a, b, c idOnly
+	alice.must(http.StatusCreated, "POST", "/exercises", exerciseBody("Alpha press"), &a)
+	alice.must(http.StatusCreated, "POST", "/exercises", exerciseBody("Bravo press"), &b)
+	alice.must(http.StatusCreated, "POST", "/exercises", exerciseBody("Charlie press"), &c)
+
+	var tmpl idOnly
+	alice.must(http.StatusCreated, "POST", "/templates", map[string]any{"name": "Plan", "exercises": []map[string]any{
+		{"exercise_id": a.ID, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 8},
+		{"exercise_id": b.ID, "target_sets": 2},
+	}}, &tmpl)
+	var w idOnly
+	alice.must(http.StatusCreated, "POST", "/templates/"+tmpl.ID+"/start", nil, &w)
+
+	type entry struct {
+		ExerciseID    string `json:"exercise_id"`
+		TargetSets    *int   `json:"target_sets"`
+		TargetRepsMin *int   `json:"target_reps_min"`
+	}
+	type detail struct {
+		Exercises []entry `json:"exercises"`
+		Sets      []struct {
+			ExerciseID string `json:"exercise_id"`
+		} `json:"sets"`
+	}
+	get := func() detail {
+		var d detail
+		alice.must(http.StatusOK, "GET", "/workouts/"+w.ID, nil, &d)
+		return d
+	}
+	ids := func(d detail) []string {
+		var out []string
+		for _, e := range d.Exercises {
+			out = append(out, e.ExerciseID)
+		}
+		return out
+	}
+	same := func(got, want []string) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Started from the template: its plan, frozen. Editing the template
+	// afterwards doesn't touch this workout.
+	d := get()
+	if !same(ids(d), []string{a.ID, b.ID}) || d.Exercises[0].TargetSets == nil || *d.Exercises[0].TargetSets != 3 ||
+		d.Exercises[0].TargetRepsMin == nil || *d.Exercises[0].TargetRepsMin != 8 {
+		t.Fatalf("after start: %+v, want the plan A(3x8), B", d.Exercises)
+	}
+	var tpl idOnly
+	alice.must(http.StatusOK, "PUT", "/templates/"+tmpl.ID, map[string]any{"name": "Plan", "exercises": []map[string]any{
+		{"exercise_id": c.ID, "target_sets": 5},
+	}}, &tpl)
+	if d := get(); !same(ids(d), []string{a.ID, b.ID}) {
+		t.Errorf("template edit changed the workout: %v", ids(d))
+	}
+
+	// Added before any set; logging a set for an unlisted exercise appends it.
+	alice.must(http.StatusNoContent, "POST", "/workouts/"+w.ID+"/exercises", map[string]any{"exercise_id": c.ID})
+	alice.must(http.StatusNoContent, "POST", "/workouts/"+w.ID+"/exercises", map[string]any{"exercise_id": c.ID}) // idempotent
+	var set idOnly
+	alice.must(http.StatusCreated, "POST", "/workouts/"+w.ID+"/sets", map[string]any{"exercise_id": b.ID, "reps": 5, "weight_kg": 50}, &set)
+	alice.must(http.StatusCreated, "POST", "/workouts/"+w.ID+"/sets", map[string]any{"exercise_id": c.ID, "reps": 5, "weight_kg": 60}, &set)
+	if d := get(); !same(ids(d), []string{a.ID, b.ID, c.ID}) || d.Exercises[2].TargetSets != nil {
+		t.Errorf("after add + logging: %+v, want A, B, C (C unplanned)", d.Exercises)
+	}
+
+	// Reorder: must be exactly the listed exercises.
+	alice.must(http.StatusNoContent, "PUT", "/workouts/"+w.ID+"/exercises", map[string]any{"exercise_ids": []string{c.ID, a.ID, b.ID}})
+	if d := get(); !same(ids(d), []string{c.ID, a.ID, b.ID}) {
+		t.Errorf("after reorder: %v, want C, A, B", ids(d))
+	}
+	for _, bad := range [][]string{{c.ID, a.ID}, {c.ID, a.ID, a.ID}, {c.ID, a.ID, b.ID, b.ID}} {
+		if code, _ := alice.do("PUT", "/workouts/"+w.ID+"/exercises", map[string]any{"exercise_ids": bad}); code != http.StatusBadRequest {
+			t.Errorf("reorder %v: status %d, want 400", bad, code)
+		}
+	}
+
+	// Save as template follows the workout's order (exercises with sets only).
+	var saved struct {
+		Exercises []struct {
+			ExerciseID string `json:"exercise_id"`
+		} `json:"exercises"`
+	}
+	alice.must(http.StatusCreated, "POST", "/workouts/"+w.ID+"/save-as-template", map[string]any{"name": "From workout"}, &saved)
+	if len(saved.Exercises) != 2 || saved.Exercises[0].ExerciseID != c.ID || saved.Exercises[1].ExerciseID != b.ID {
+		t.Errorf("saved template order %+v, want C then B", saved.Exercises)
+	}
+
+	// Remove takes the exercise and its sets; removing it again is 404.
+	var removed struct {
+		SetsDeleted int `json:"sets_deleted"`
+	}
+	alice.must(http.StatusOK, "DELETE", "/workouts/"+w.ID+"/exercises/"+c.ID, nil, &removed)
+	if removed.SetsDeleted != 1 {
+		t.Errorf("sets_deleted %d, want 1", removed.SetsDeleted)
+	}
+	d = get()
+	if !same(ids(d), []string{a.ID, b.ID}) || len(d.Sets) != 1 || d.Sets[0].ExerciseID != b.ID {
+		t.Errorf("after remove: exercises %v, sets %+v; want A, B and only B's set", ids(d), d.Sets)
+	}
+	if code, _ := alice.do("DELETE", "/workouts/"+w.ID+"/exercises/"+c.ID, nil); code != http.StatusNotFound {
+		t.Errorf("removing again: status %d, want 404", code)
+	}
+
+	// Undoing the removal of a planned exercise brings its plan back;
+	// targets are checked by the template rules.
+	alice.must(http.StatusOK, "DELETE", "/workouts/"+w.ID+"/exercises/"+a.ID, nil, &removed)
+	if code, _ := alice.do("POST", "/workouts/"+w.ID+"/exercises",
+		map[string]any{"exercise_id": a.ID, "target_sets": 0}); code != http.StatusBadRequest {
+		t.Errorf("target_sets 0: status %d, want 400", code)
+	}
+	alice.must(http.StatusNoContent, "POST", "/workouts/"+w.ID+"/exercises",
+		map[string]any{"exercise_id": a.ID, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 8})
+	d = get()
+	last := d.Exercises[len(d.Exercises)-1]
+	if last.ExerciseID != a.ID || last.TargetSets == nil || *last.TargetSets != 3 || last.TargetRepsMin == nil || *last.TargetRepsMin != 8 {
+		t.Errorf("restored A: %+v, want 3x8 at the end", last)
+	}
+
+	// A full undo in one call: plan, sets and position, all or nothing.
+	alice.must(http.StatusOK, "DELETE", "/workouts/"+w.ID+"/exercises/"+b.ID, nil, &removed)
+	before := get()
+	bad := map[string]any{"exercise_id": b.ID, "target_sets": 2, "position": 0,
+		"sets": []map[string]any{{"reps": 5, "weight_kg": 50}, {"weight_kg": 50}}} // second set lacks reps
+	if code, _ := alice.do("POST", "/workouts/"+w.ID+"/exercises", bad); code != http.StatusBadRequest {
+		t.Errorf("restore with an invalid set: status %d, want 400", code)
+	}
+	if after := get(); !same(ids(after), ids(before)) || len(after.Sets) != len(before.Sets) {
+		t.Errorf("a failed restore changed the workout: %v / %d sets, was %v / %d", ids(after), len(after.Sets), ids(before), len(before.Sets))
+	}
+	alice.must(http.StatusNoContent, "POST", "/workouts/"+w.ID+"/exercises", map[string]any{
+		"exercise_id": b.ID, "target_sets": 2, "position": 0,
+		"sets": []map[string]any{{"reps": 5, "weight_kg": 50}, {"reps": 4, "weight_kg": 50}},
+	})
+	d = get()
+	var bSets int
+	for _, st := range d.Sets {
+		if st.ExerciseID == b.ID {
+			bSets++
+		}
+	}
+	if d.Exercises[0].ExerciseID != b.ID || d.Exercises[0].TargetSets == nil || *d.Exercises[0].TargetSets != 2 || bSets != 2 {
+		t.Errorf("full restore: first %+v with %d sets; want B first, 2 planned, 2 sets", d.Exercises[0], bSets)
 	}
 }

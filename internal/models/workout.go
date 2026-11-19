@@ -179,10 +179,31 @@ func (s *WorkoutSet) ValidateFor(tt TrackingType) error {
 	return nil
 }
 
-// WorkoutDetail is a workout together with its sets, in logging order.
+// WorkoutExercise is one entry in a workout's own exercise list: what the
+// workout screen shows, in order. Targets are the plan copied in from the
+// template when the workout started (nil for an exercise added during the
+// workout). ExerciseName, ExerciseTrackingType and ExerciseArchived come
+// from a join.
+type WorkoutExercise struct {
+	ExerciseID            uuid.UUID    `json:"exercise_id"`
+	ExerciseName          string       `json:"exercise_name"`
+	ExerciseTrackingType  TrackingType `json:"exercise_tracking_type"`
+	ExerciseArchived      bool         `json:"exercise_archived"`
+	Position              int          `json:"position"`
+	TargetSets            *int         `json:"target_sets"`
+	TargetRepsMin         *int         `json:"target_reps_min"`
+	TargetRepsMax         *int         `json:"target_reps_max"`
+	TargetDurationSeconds *int         `json:"target_duration_seconds"`
+	TargetDistanceM       *float64     `json:"target_distance_m"`
+	Notes                 *string      `json:"notes,omitempty"`
+}
+
+// WorkoutDetail is a workout together with its exercise list (in display
+// order) and its sets (in logging order).
 type WorkoutDetail struct {
 	Workout
-	Sets []WorkoutSet `json:"sets"`
+	Exercises []WorkoutExercise `json:"exercises"`
+	Sets      []WorkoutSet      `json:"sets"`
 }
 
 // PreviousSession is "last time" for one exercise: its sets from the most

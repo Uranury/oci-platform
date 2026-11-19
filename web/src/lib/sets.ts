@@ -1,5 +1,5 @@
 import { fmtDuration, fmtWeight } from "./format";
-import type { Measure, SetBody, TemplateExercise, TrackingType, WorkoutSet } from "./types";
+import type { Measure, Plan, SetBody, TrackingType, WorkoutSet } from "./types";
 
 export interface Field {
   key: Measure;
@@ -49,7 +49,7 @@ export function prefill(
     editing?: WorkoutSet | null;
     logged: WorkoutSet[];
     last?: WorkoutSet[];
-    plan?: TemplateExercise | null;
+    plan?: Plan | null;
   },
 ): Values {
   const src: Values =

@@ -47,9 +47,12 @@ All request/response bodies are JSON.
 | POST   | `/exercises/{id}/duplicate` | Bearer | Copy a default (or your own) into a new custom exercise; optional `{"name"}` |
 | GET    | `/workouts`       | Bearer | List your workouts, newest first, each with `set_count` and `exercises` (names, in the order first logged) |
 | POST   | `/workouts`       | Bearer | Start a workout (`{"name"?, "notes"?, "performed_at"?}`; date defaults to now) |
-| GET    | `/workouts/{id}`  | Bearer | Get a workout with its sets         |
+| GET    | `/workouts/{id}`  | Bearer | Get a workout with its exercise list (`exercises`, in order, with any plan targets) and its sets |
 | PUT    | `/workouts/{id}`  | Bearer | Update name, notes, date            |
 | DELETE | `/workouts/{id}`  | Bearer | Delete a workout and its sets       |
+| POST   | `/workouts/{id}/exercises` | Bearer | Add an exercise to the workout's list before logging it (`{"exercise_id"}`, optional plan targets) |
+| PUT    | `/workouts/{id}/exercises` | Bearer | Reorder: `{"exercise_ids": [...]}` listing each of the workout's exercises once |
+| DELETE | `/workouts/{id}/exercises/{exerciseID}` | Bearer | Remove an exercise from the workout together with its sets (`{"sets_deleted": n}`) |
 | POST   | `/workouts/{id}/sets` | Bearer | Log a set: `{"exercise_id"}` plus the measurements its `tracking_type` takes — `reps`, `weight_kg`, `duration_seconds`, `distance_m` |
 | DELETE | `/workouts/{id}/sets/{setID}` | Bearer | Delete a set               |
 | GET    | `/` (and static files) | – | The web frontend (built from `web/`) |

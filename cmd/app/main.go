@@ -102,7 +102,7 @@ func run() error {
 
 	authService := service.NewAuthService(userRepo, refreshTokenRepo, txProvider, jwtIssuer, cfg.RefreshTokenTTL)
 	exerciseService := service.NewExerciseService(exerciseRepo)
-	workoutService := service.NewWorkoutService(exerciseRepo, workoutRepo, workoutSetRepo)
+	workoutService := service.NewWorkoutService(txProvider, exerciseRepo, workoutRepo, workoutSetRepo, repo.NewWorkoutExercise(pool))
 	templateService := service.NewTemplateService(txProvider, templateRepo, exerciseRepo, workoutRepo, workoutSetRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
