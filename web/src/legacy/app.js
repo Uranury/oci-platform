@@ -1,72 +1,11 @@
-"use strict";
-
 // Lift Log frontend (pre-redesign): plain JS, bundled as-is by Vite. Hash routing:
 //   #/login  #/  #/workouts/<id>  #/templates  #/templates/<id|new>  #/exercises
 
-// ---------- tokens ----------
-
-const store = {
-  get access() { return localStorage.getItem("access_token"); },
-  get refresh() { return localStorage.getItem("refresh_token"); },
-  set(pair) {
-    localStorage.setItem("access_token", pair.access_token);
-    localStorage.setItem("refresh_token", pair.refresh_token);
-  },
-  clear() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-  },
-};
-
 // ---------- API ----------
 
-class ApiError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-let refreshing = null; // shared promise so parallel 401s refresh once
-
-async function refreshTokens() {
-  if (!refreshing) {
-    refreshing = (async () => {
-      const rt = store.refresh;
-      if (!rt) return false;
-      const res = await fetch("/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-      if (!res.ok) return false;
-      store.set(await res.json());
-      return true;
-    })().finally(() => { refreshing = null; });
-  }
-  return refreshing;
-}
-
-async function api(method, path, body, { auth = true, retry = true } = {}) {
-  const headers = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (auth && store.access) headers["Authorization"] = "Bearer " + store.access;
-
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-
-  if (res.status === 401 && auth && retry) {
-    if (await refreshTokens()) return api(method, path, body, { auth, retry: false });
-    store.clear();
-    go("#/login");
-    throw new ApiError(401, "Session expired, please log in again");
-  }
-  if (res.status === 204) return null;
-
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, (data && data.error) || res.statusText);
-  return data;
-}
+// Shared with the Svelte screens: one token store, one refresh in flight.
+import { api, store } from "../lib/api";
+import { hideScreen, showWorkout } from "../main";
 
 // ---------- DOM helpers ----------
 
@@ -120,12 +59,6 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-// <input type="datetime-local"> wants local "YYYY-MM-DDTHH:MM".
-function toLocalInput(iso) {
-  const d = new Date(iso);
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 16);
-}
 
 function fmtWeight(kg) {
   return (Math.round(kg * 100) / 100).toString();
@@ -181,12 +114,19 @@ function route() {
   if (loggedIn && hash === "#/login") return go("#/");
 
   let m;
+  // Redesigned screens render through Svelte into #screen.
+  if ((m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/))) {
+    app.hidden = true;
+    document.getElementById("topbar").hidden = true;
+    return showWorkout(document.getElementById("screen"), m[1], { toast });
+  }
+  hideScreen();
+  app.hidden = false;
   if (hash === "#/login") return viewLogin();
   if (hash === "#/exercises") return nav("exercises"), viewExercises().catch(fail);
   if (hash === "#/templates") return nav("templates"), viewTemplates().catch(fail);
   if (hash === "#/templates/new") return nav("templates"), viewTemplate(null).catch(fail);
   if ((m = hash.match(/^#\/templates\/([0-9a-f-]{36})$/))) return nav("templates"), viewTemplate(m[1]).catch(fail);
-  if ((m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/))) return nav("workouts"), viewWorkout(m[1]).catch(fail);
   nav("workouts");
   viewWorkouts().catch(fail);
 }
@@ -344,52 +284,9 @@ function fmtDuration(sec) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// Renders a set from whatever measurements it has, so old sets still read
-// right if their exercise's tracking type is changed later.
-function fmtSet(s) {
-  const parts = [];
-  const w = s.weight_kg != null ? fmtWeight(s.weight_kg) + " kg" : null;
-  if (s.reps != null) {
-    if (s.exercise_tracking_type === "bodyweight_reps") {
-      parts.push(w && s.weight_kg > 0 ? `BW + ${w} × ${s.reps}` : `${s.reps} reps`);
-    } else {
-      parts.push(w ? `${w} × ${s.reps}` : `${s.reps} reps`);
-    }
-  }
-  if (s.distance_m != null) parts.push(`${fmtWeight(s.distance_m)} m`);
-  if (s.duration_seconds != null) parts.push(fmtDuration(s.duration_seconds));
-  if (s.reps == null && w && s.weight_kg > 0) parts.push(`@ ${w}`);
-  return parts.join(" · ");
-}
 
-// "2/3 sets · 8–12 reps"; done is omitted outside a workout.
-function fmtTarget(t, done) {
-  const out = [`${done != null ? done + "/" : ""}${t.target_sets} set${t.target_sets === 1 && done == null ? "" : "s"}`];
-  if (t.target_reps_min != null) {
-    out.push(t.target_reps_min === t.target_reps_max
-      ? `${t.target_reps_min} reps` : `${t.target_reps_min}–${t.target_reps_max} reps`);
-  }
-  if (t.target_distance_m != null) out.push(`${fmtWeight(t.target_distance_m)} m`);
-  if (t.target_duration_seconds != null) out.push(fmtDuration(t.target_duration_seconds));
-  return out.join(" · ");
-}
 
-// "3 × 10 @ 60 kg" when every set was the same, else each set in order.
-function fmtSets(sets) {
-  const f = sets.map(fmtSet);
-  if (!f.every((x) => x === f[0])) return f.join(", ");
-  const s = sets[0];
-  if (sets.length === 1) return f[0];
-  if (s.exercise_tracking_type === "weight_reps" && s.reps != null && s.weight_kg != null) {
-    return `${sets.length} × ${s.reps} @ ${fmtWeight(s.weight_kg)} kg`;
-  }
-  return `${sets.length} × ${f[0]}`;
-}
 
-// "Last time (3 days ago): 3 × 10 @ 60 kg".
-function fmtPrevious(p) {
-  return `Last time (${fmtAgo(p.performed_at)}): ${fmtSets(p.sets)}`;
-}
 
 function select(list, value, { placeholder, required } = {}) {
   return h("select", { required },
@@ -475,30 +372,7 @@ async function createExercise(body) {
   return api("POST", "/exercises", body);
 }
 
-// ---------- views: single workout ----------
-
-// The exercise last picked in the set form, kept across renders.
-let lastExerciseId = "";
-
-// A value this many times the largest one logged for the exercise (this
-// workout or last time) is probably a typo; asked about before saving.
-// min is how far above it must also be, so small numbers don't trip it.
-const SUSPICIOUS = {
-  weight_kg: { factor: 2, min: 20, unit: " kg", fmt: fmtWeight },
-  reps: { factor: 3, min: 10, unit: " reps", fmt: String },
-  distance_m: { factor: 3, min: 500, unit: " m", fmt: fmtWeight },
-  duration_seconds: { factor: 3, min: 120, unit: "", fmt: fmtDuration },
-};
-
-// Fields shown per tracking type; mirrors models.setRules on the server
-// (which is the one that enforces it).
-const SET_FIELDS = {
-  weight_reps: [["weight_kg", "Weight (kg)", true], ["reps", "Reps", true]],
-  bodyweight_reps: [["reps", "Reps", true], ["weight_kg", "Added weight (kg)", false]],
-  duration: [["duration", "Time (min:sec)", true], ["weight_kg", "Added weight (kg)", false]],
-  distance: [["distance_m", "Distance (m)", true], ["weight_kg", "Weight (kg)", false]],
-};
-
+// "1:30" or plain seconds -> seconds; used by template targets.
 function parseDuration(str) {
   const t = str.trim();
   if (!t) return null;
@@ -507,347 +381,6 @@ function parseDuration(str) {
     return m * 60 + s;
   }
   return parseInt(t, 10); // plain number = seconds
-}
-
-// editSetId: a logged set being corrected in the set form instead of a
-// new one being logged.
-async function viewWorkout(id, { creatingExercise = false, editSetId = null } = {}) {
-  if (!app.childElementCount) render(h("p.muted", {}, "Loading…"));
-  const [w, exercises, opts, previous] = await Promise.all([
-    api("GET", "/workouts/" + id),
-    api("GET", "/exercises"),
-    getOptions(),
-    api("GET", `/workouts/${id}/previous`),
-  ]);
-  const byId = Object.fromEntries(exercises.map((e) => [e.id, e]));
-  // "Last time" per exercise: sets from the latest earlier workout with it.
-  const prevBy = Object.fromEntries(previous.map((p) => [p.exercise_id, p]));
-  // The plan, if started from a template (gone if it was deleted since).
-  const template = w.template_id
-    ? await api("GET", "/templates/" + w.template_id).catch((e) => (e.status === 404 ? null : Promise.reject(e)))
-    : null;
-  const plan = template ? template.exercises : [];
-
-  // --- header: name, date (saved on change) ---
-  const name = h("input", { value: w.name || "", placeholder: "Workout name (e.g. Push day)" });
-  const when = h("input", { type: "datetime-local", value: toLocalInput(w.performed_at) });
-  const notes = h("textarea", { placeholder: "Notes" });
-  notes.value = w.notes || "";
-
-  // Finish waits for an in-flight save (editing notes then tapping Finish
-  // fires "change" right before the click).
-  let pendingSave = Promise.resolve();
-  function saveMeta() {
-    pendingSave = saveMetaNow();
-    return pendingSave;
-  }
-  async function saveMetaNow() {
-    try {
-      await api("PUT", "/workouts/" + id, {
-        name: name.value,
-        notes: notes.value,
-        performed_at: when.value ? new Date(when.value).toISOString() : undefined,
-      });
-      toast("Saved");
-    } catch (e) { fail(e); }
-  }
-  [name, when, notes].forEach((el) => el.addEventListener("change", saveMeta));
-
-  // --- sets grouped by exercise, in the order exercises were first logged ---
-  const groups = new Map();
-  for (const s of w.sets) {
-    if (!groups.has(s.exercise_id)) groups.set(s.exercise_id, { name: s.exercise_name, sets: [] });
-    groups.get(s.exercise_id).sets.push(s);
-  }
-
-  // Planned exercises first, in template order (with progress and the
-  // target), then anything logged that wasn't in the plan.
-  const planned = new Set(plan.map((te) => te.exercise_id));
-  const cards = [
-    ...plan.map((te) => ({ exId: te.exercise_id, te, g: groups.get(te.exercise_id) || { name: te.exercise_name, sets: [] } })),
-    ...[...groups].filter(([exId]) => !planned.has(exId)).map(([exId, g]) => ({ exId, g })),
-  ];
-  const doneOf = (exId) => (groups.get(exId) || { sets: [] }).sets.length;
-  const editing = editSetId ? w.sets.find((s) => s.id === editSetId) : null;
-
-  const groupCards = cards.map(({ exId, te, g }) =>
-    h("div.card", {},
-      h("div.card-head", {},
-        h("h2", {}, g.name),
-        te && !te.exercise_archived && byId[te.exercise_id]
-          ? h("button.small", { type: "button", onclick: () => {
-            // While the new-exercise form is open there's no set form to fill.
-            if (entry.pick) return entry.pick(te.exercise_id);
-            lastExerciseId = te.exercise_id;
-            viewWorkout(id).catch(fail);
-          } }, "Log")
-          : null),
-      te ? h("p.muted.small.plan-meta", {},
-        fmtTarget(te, g.sets.length) + (te.exercise_archived ? " · archived" : "")) : null,
-      te && te.notes ? h("p.muted.small.plan-meta", {}, te.notes) : null,
-      prevBy[exId] ? h("p.muted.small.plan-meta", {}, fmtPrevious(prevBy[exId])) : null,
-      h("ul.sets", {}, g.sets.map((s, i) =>
-        h("li", { class: editing && s.id === editing.id ? "editing" : null },
-          h("span.n", {}, i + 1),
-          h("button.v", {
-            type: "button",
-            title: "Edit set",
-            onclick: () => viewWorkout(id, { editSetId: s.id }).catch(fail),
-          }, fmtSet(s)),
-          h("button.icon", {
-            "aria-label": "Delete set",
-            title: "Delete set",
-            onclick: async () => {
-              try {
-                await api("DELETE", `/workouts/${id}/sets/${s.id}`);
-                viewWorkout(id).catch(fail);
-              } catch (e) { fail(e); }
-            },
-          }, "×"))))));
-
-  // --- new-exercise form, shown in place of the set form ---
-  let entry;
-  if (creatingExercise) {
-    entry = exerciseForm(opts, {
-      title: "New exercise",
-      submitLabel: "Create & use",
-      onCancel: () => viewWorkout(id).catch(fail),
-      onSave: async (body) => {
-        const e = await createExercise(body);
-        if (!e) return;
-        lastExerciseId = e.id;
-        viewWorkout(id).catch(fail);
-      },
-    });
-  } else {
-    entry = setForm();
-  }
-
-  function setForm() {
-    const NEW = "__new__";
-    const mine = exercises.filter((e) => !e.system);
-    const library = exercises.filter((e) => e.system);
-    // A set being edited may use an exercise archived since; keep it
-    // selectable so only the numbers need fixing.
-    let archivedOpt = null;
-    if (editing && !byId[editing.exercise_id]) {
-      byId[editing.exercise_id] = {
-        id: editing.exercise_id, name: editing.exercise_name + " (archived)",
-        tracking_type: editing.exercise_tracking_type,
-      };
-      archivedOpt = h("option", { value: editing.exercise_id }, byId[editing.exercise_id].name);
-    }
-    const exSelect = h("select", { required: true },
-      h("option", { value: "" }, "Choose exercise…"),
-      archivedOpt,
-      mine.length ? h("optgroup", { label: "My exercises" }, mine.map((e) => h("option", { value: e.id }, e.name))) : null,
-      h("optgroup", { label: "Library" }, library.map((e) => h("option", { value: e.id }, e.name))),
-      editing ? null : h("option", { value: NEW }, "+ New exercise…"));
-
-    const lastInWorkout = w.sets.length ? w.sets[w.sets.length - 1].exercise_id : null;
-    let prefer = byId[lastExerciseId] ? lastExerciseId : lastInWorkout;
-    if (plan.length) {
-      // Stay on the current planned exercise until its sets are done, then
-      // move to the next unfinished one.
-      const open = (te) => byId[te.exercise_id] && doneOf(te.exercise_id) < te.target_sets;
-      const cur = plan.find((te) => te.exercise_id === prefer);
-      if (!cur || !open(cur)) {
-        const next = plan.find(open);
-        if (next) prefer = next.exercise_id;
-      }
-    }
-    if (editing) prefer = editing.exercise_id;
-    if (prefer && byId[prefer]) exSelect.value = prefer;
-
-    const fieldsBox = h("div.row");
-    const prevHint = h("p.hint");
-    let inputs = {};
-
-    function buildFields() {
-      inputs = {};
-      const ex = byId[exSelect.value];
-      const last = ex && prevBy[ex.id];
-      prevHint.textContent = last ? fmtPrevious(last) : "";
-      prevHint.hidden = !last;
-      if (!ex) { fieldsBox.replaceChildren(); return; }
-      const te = plan.find((p) => p.exercise_id === ex.id);
-      // Pre-fill from: the set being edited, else this workout's latest set
-      // of the exercise, else the first set last time, else the plan target.
-      const logged = (groups.get(ex.id) || { sets: [] }).sets;
-      const prev = (editing && editing.exercise_id === ex.id ? editing : null)
-        || logged[logged.length - 1]
-        || (last && last.sets[0])
-        || (te ? {
-          reps: te.target_reps_min,
-          duration_seconds: te.target_duration_seconds, distance_m: te.target_distance_m,
-        } : {});
-      fieldsBox.replaceChildren(...SET_FIELDS[ex.tracking_type].map(([key, label, required]) => {
-        let input;
-        if (key === "duration") {
-          input = h("input", { inputmode: "numeric", required, placeholder: "1:30", pattern: "\\d+(:[0-5]?\\d)?",
-            value: prev.duration_seconds != null ? fmtDuration(prev.duration_seconds) : "" });
-        } else {
-          const isInt = key === "reps";
-          input = h("input", {
-            type: "number", inputmode: isInt ? "numeric" : "decimal", required,
-            min: isInt ? 1 : 0, step: isInt ? 1 : "0.25",
-            placeholder: required ? "" : "optional",
-            value: prev[key] != null ? (isInt ? prev[key] : fmtWeight(prev[key])) : "",
-          });
-        }
-        inputs[key] = input;
-        return field(label, input);
-      }));
-    }
-
-    exSelect.addEventListener("change", () => {
-      if (exSelect.value === NEW) return viewWorkout(id, { creatingExercise: true }).catch(fail);
-      if (!editing) lastExerciseId = exSelect.value;
-      buildFields();
-    });
-    buildFields();
-
-    const addBtn = h("button.primary.block", { type: "submit" }, editing ? "Save set" : "Log set");
-    const form = h("form.card.stack", {
-      onsubmit: async (e) => {
-        e.preventDefault();
-        const ex = byId[exSelect.value];
-        if (!ex) return toast("Choose an exercise", true);
-        const num = (k, parse) => (inputs[k] && inputs[k].value.trim() !== "" ? parse(inputs[k].value) : undefined);
-        const body = {
-          exercise_id: ex.id,
-          reps: num("reps", (v) => parseInt(v, 10)),
-          weight_kg: num("weight_kg", parseFloat),
-          duration_seconds: num("duration", parseDuration),
-          distance_m: num("distance_m", parseFloat),
-        };
-        const odd = suspicious(ex.id, body);
-        if (odd && !confirm(odd + " Save anyway?")) return;
-        addBtn.disabled = true;
-        try {
-          if (editing) {
-            await api("PUT", `/workouts/${id}/sets/${editing.id}`, body);
-            toast("Set updated");
-          } else {
-            await api("POST", `/workouts/${id}/sets`, body);
-            lastExerciseId = ex.id;
-          }
-          viewWorkout(id).catch(fail);
-        } catch (ex2) {
-          fail(ex2);
-          addBtn.disabled = false;
-        }
-      },
-    },
-      editing ? h("h2", {}, "Edit set") : null,
-      field("Exercise", exSelect),
-      prevHint,
-      fieldsBox,
-      editing
-        ? h("div.row", {},
-            h("button", { type: "button", onclick: () => viewWorkout(id).catch(fail) }, "Cancel"),
-            addBtn)
-        : addBtn);
-
-    // A warning like "1000 kg? Last time your most was 100 kg." when a value
-    // is far above anything logged for the exercise, else null.
-    function suspicious(exId, body) {
-      const last = prevBy[exId];
-      const history = [
-        ...(groups.get(exId) || { sets: [] }).sets.filter((s) => !editing || s.id !== editing.id),
-        ...(last ? last.sets : []),
-      ];
-      for (const [key, r] of Object.entries(SUSPICIOUS)) {
-        const v = body[key];
-        const seen = history.map((s) => s[key]).filter((x) => x != null && x > 0);
-        if (v == null || !seen.length) continue;
-        const most = Math.max(...seen);
-        if (v > most * r.factor && v - most >= r.min) {
-          return `${r.fmt(v)}${r.unit}? Your most for this exercise recently was ${r.fmt(most)}${r.unit}.`;
-        }
-      }
-      return null;
-    }
-
-    // Called by a plan card's "Log" button.
-    form.pick = (exId) => {
-      exSelect.value = exId;
-      lastExerciseId = exId;
-      buildFields();
-      form.scrollIntoView({ behavior: "smooth", block: "center" });
-      const first = fieldsBox.querySelector("input");
-      if (first) first.focus({ preventScroll: true });
-    };
-    return form;
-  }
-
-  // Sets are saved as they're logged, so finishing only leaves the page;
-  // an empty workout is offered for discarding instead of kept as clutter.
-  const finish = h("button.primary.block", {
-    onclick: async () => {
-      await pendingSave;
-      if (!w.sets.length) {
-        if (!confirm("No sets logged. Discard this empty workout?")) return;
-        try {
-          await api("DELETE", "/workouts/" + id);
-          toast("Workout discarded");
-          go("#/");
-        } catch (e) { fail(e); }
-        return;
-      }
-      try {
-        const done = await api("POST", `/workouts/${id}/finish`);
-        const n = w.sets.length;
-        toast(`Workout saved · ${n} set${n === 1 ? "" : "s"}` +
-          (done.finished_at ? " · " + fmtSession(done.performed_at, done.finished_at) : ""));
-        go("#/");
-      } catch (e) { fail(e); }
-    },
-  }, w.finished_at ? "Done" : "Finish workout");
-
-  // Only for workouts not started from a template: turning one you
-  // improvised into a reusable plan.
-  const saveAsTemplate = w.sets.length && !template ? h("button.block", {
-    onclick: async () => {
-      const n = prompt("Name for the new template", w.name || "");
-      if (n === null) return;
-      try {
-        const t = await api("POST", `/workouts/${id}/save-as-template`, { name: n.trim() });
-        toast(`Saved template "${t.name}"`);
-        go("#/templates/" + t.id);
-      } catch (e) { fail(e); }
-    },
-  }, "Save as template") : null;
-
-  const del = h("button.danger.block", {
-    onclick: async () => {
-      if (!confirm("Delete this workout and all its sets?")) return;
-      try {
-        await api("DELETE", "/workouts/" + id);
-        go("#/");
-      } catch (e) { fail(e); }
-    },
-  }, "Delete workout");
-
-  render(
-    h("p", {}, h("a.muted.small", { href: "#/" }, "← All workouts")),
-    h("div.card.stack", {}, name, when,
-      template || w.finished_at ? h("p.muted.small", { style: "margin-bottom:0" },
-        template ? ["From template ", h("a", { href: "#/templates/" + template.id }, template.name)] : null,
-        template && w.finished_at ? " · " : null,
-        w.finished_at ? "Took " + fmtSession(w.performed_at, w.finished_at) : null) : null),
-    ...groupCards,
-    groupCards.length ? null : h("p.muted.empty", {}, "No sets yet. Log your first one below."),
-    entry,
-    h("div.card", {}, h("label", {}, "Notes"), notes),
-    h("div.stack", { style: "margin-bottom:12px" }, finish, saveAsTemplate),
-    del,
-  );
-  if (editing) {
-    entry.scrollIntoView({ block: "center" });
-    const first = entry.querySelector("input");
-    if (first) first.focus({ preventScroll: true });
-  }
 }
 
 // ---------- views: templates ----------
