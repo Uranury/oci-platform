@@ -11,3 +11,13 @@ PLAN.md
 # Ansible
 ansible/.vault_pass
 ansible/.build/
+
+# Github
+.github/agents/
+.github/skills/
+.github/hooks/
+
+# Claude Code / Impeccable (local)
+.claude/skills/
+.claude/settings.local.json
+.impeccable/
