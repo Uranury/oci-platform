@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import { fmtLast, fmtSets, fmtTarget } from "../lib/format";
   import { FIELDS, chip, prefill, suspicious, toBody, type Values } from "../lib/sets";
-  import type { Previous, SetBody, TemplateExercise, TrackingType, WorkoutSet } from "../lib/types";
+  import type { Plan, Previous, SetBody, TrackingType, WorkoutSet } from "../lib/types";
   import BiroRing from "../ui/BiroRing.svelte";
   import BiroTick from "../ui/BiroTick.svelte";
   import Button from "../ui/Button.svelte";
@@ -29,12 +29,14 @@
     onlog,
     onupdate,
     ondelete,
+    onremove,
+    handle,
   }: {
     exerciseId: string;
     code: string;
     name: string;
     type: TrackingType;
-    plan?: TemplateExercise | null;
+    plan?: Plan | null;
     sets: WorkoutSet[];
     last?: Previous;
     unavailable?: boolean; // archived since: sets show, nothing new is logged
@@ -47,6 +49,8 @@
     onlog: (body: SetBody) => Promise<void>;
     onupdate: (setId: string, body: SetBody) => Promise<void>;
     ondelete: (setId: string) => Promise<void>;
+    onremove: () => void; // take the exercise out of the workout
+    handle?: Snippet; // the drag handle, beside the heading
   } = $props();
 
   let editingId = $state<string | null>(null);
@@ -117,7 +121,7 @@
   }
 </script>
 
-<li class="item" class:active>
+<div class="item" class:active>
   <span class="route" aria-hidden="true">
     {#if lineIn}<i class="seg in {lineIn}"></i>{/if}
     {#if lineOut}<i class="seg out {lineOut}"></i>{/if}
@@ -125,17 +129,20 @@
   </span>
 
   <section class="card" aria-labelledby="ex-{code}">
-    {#if active}
-      <header class="head">
-        <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
-        {#if plan}<span class="target">{fmtTarget(plan)}</span>{/if}
-      </header>
-    {:else}
-      <button type="button" class="head toggle" onclick={onactivate} aria-expanded="false">
-        <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
-        <span class="count">{target ? `${done} / ${target}` : `${done} set${done === 1 ? "" : "s"}`}</span>
-      </button>
-    {/if}
+    <div class="headrow">
+      {#if active}
+        <header class="head">
+          <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
+          {#if plan}<span class="target">{fmtTarget(plan)}</span>{/if}
+        </header>
+      {:else}
+        <button type="button" class="head toggle" onclick={onactivate} aria-expanded="false">
+          <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
+          <span class="count">{target ? `${done} / ${target}` : `${done} set${done === 1 ? "" : "s"}`}</span>
+        </button>
+      {/if}
+      {@render handle?.()}
+    </div>
 
     {#if !active && done}
       <p class="today">Today <b>{fmtSets(sets)}</b></p>
@@ -220,17 +227,23 @@
                 {busy ? "Logging…" : `Log set ${code}${nextNo}`}
               </Button>
             </div>
+            <div class="apart">
+              <Button variant="danger" disabled={busy} onclick={onremove}>Remove {code} from workout</Button>
+            </div>
           {/if}
         </form>
+      {:else}
+        <div class="entry apart">
+          <Button variant="danger" onclick={onremove}>Remove {code} from workout</Button>
+        </div>
       {/if}
     {/if}
   </section>
-</li>
+</div>
 
 <style>
   .item {
     position: relative;
-    list-style: none;
     padding-left: 26px;
     margin-bottom: 10px;
   }
@@ -292,6 +305,14 @@
   }
   .active .card {
     border-width: 2.5px;
+  }
+  .headrow {
+    display: flex;
+    align-items: flex-start;
+  }
+  .headrow > :first-child {
+    flex: 1;
+    min-width: 0;
   }
   .head {
     display: flex;

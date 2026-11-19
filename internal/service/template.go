@@ -153,14 +153,22 @@ func (s *TemplateService) Start(ctx context.Context, userID, id uuid.UUID) (*mod
 		return nil, err
 	}
 	w := &models.Workout{UserID: userID, Name: &t.Name, PerformedAt: time.Now(), TemplateID: &t.ID}
-	if err := s.workouts.Create(ctx, w); err != nil {
+	// The workout and its frozen copy of the plan commit together.
+	err = s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		if err := repo.NewWorkout(exec).Create(ctx, w); err != nil {
+			return err
+		}
+		return repo.NewWorkoutExercise(exec).CopyTemplate(ctx, w.ID, t.ID)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
 // FromWorkout creates a template from a logged workout: its exercises in
-// the order first logged, with targets derived from the sets (see
+// the workout's own order (as rearranged on the workout screen), those with
+// sets only, with targets derived from the sets (see
 // models.TemplateExerciseFromSets). Archived exercises are left out. An
 // empty name falls back to the workout's name.
 func (s *TemplateService) FromWorkout(ctx context.Context, userID, workoutID uuid.UUID, name string) (*models.TemplateDetail, error) {
@@ -176,13 +184,24 @@ func (s *TemplateService) FromWorkout(ctx context.Context, userID, workoutID uui
 		return nil, err
 	}
 
-	var order []uuid.UUID
 	byExercise := map[uuid.UUID][]models.WorkoutSet{}
 	for _, set := range sets {
-		if _, seen := byExercise[set.ExerciseID]; !seen {
-			order = append(order, set.ExerciseID)
-		}
 		byExercise[set.ExerciseID] = append(byExercise[set.ExerciseID], set)
+	}
+	var listed []models.WorkoutExercise
+	err = s.tx.RunInTx(ctx, func(exec dbutil.Executor) error {
+		var err error
+		listed, err = repo.NewWorkoutExercise(exec).List(ctx, workoutID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	var order []uuid.UUID
+	for _, we := range listed {
+		if len(byExercise[we.ExerciseID]) > 0 {
+			order = append(order, we.ExerciseID)
+		}
 	}
 
 	var items []models.TemplateExercise

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { api, ApiError } from "../lib/api";
   import { flash } from "../lib/flash";
   import { code, fmtClock, fmtDay, fmtSession, toLocalInput } from "../lib/format";
@@ -7,10 +7,10 @@
   import type {
     Exercise,
     ExerciseOptions,
+    Plan,
     Previous,
     SetBody,
     Template,
-    TemplateExercise,
     TrackingType,
     Workout,
     WorkoutSet,
@@ -33,12 +33,12 @@
   let loadError = $state<string | null>(null);
 
   let activeId = $state<string | null>(null);
-  let added = $state<string[]>([]); // picked, nothing logged yet
   let freshSetId = $state<string | null>(null);
   let toast = $state<ToastMsg | null>(null);
   let now = $state(new Date());
 
   let picking = $state(false);
+  let removing = $state<Card | null>(null); // asked before deleting its sets
   let confirming = $state<null | "discard" | "delete">(null);
   let naming = $state(false);
   let templateName = $state("");
@@ -93,46 +93,30 @@
 
   const byId = $derived(new Map(exercises.map((e) => [e.id, e])));
   const prevBy = $derived(new Map(previous.map((p) => [p.exercise_id, p])));
-  const plan = $derived<TemplateExercise[]>(template?.exercises ?? []);
-
   interface Card {
     exId: string;
     name: string;
     type: TrackingType;
-    plan: TemplateExercise | null;
+    plan: Plan | null;
     sets: WorkoutSet[];
     unavailable: boolean;
   }
 
-  // Planned exercises in template order, then anything logged off-plan in
-  // the order first logged, then exercises picked but not logged yet.
+  // The workout's own exercise list, in its saved order, each with its sets.
   const cards = $derived.by<Card[]>(() => {
     const groups = new Map<string, WorkoutSet[]>();
     for (const s of workout?.sets ?? []) {
       if (!groups.has(s.exercise_id)) groups.set(s.exercise_id, []);
       groups.get(s.exercise_id)!.push(s);
     }
-    const out: Card[] = [];
-    const seen = new Set<string>();
-    const push = (exId: string, name: string, type: TrackingType, te: TemplateExercise | null) => {
-      if (seen.has(exId)) return;
-      seen.add(exId);
-      out.push({
-        exId,
-        name,
-        type,
-        plan: te,
-        sets: groups.get(exId) ?? [],
-        unavailable: !byId.has(exId) || !!te?.exercise_archived,
-      });
-    };
-    for (const te of plan) push(te.exercise_id, te.exercise_name, te.exercise_tracking_type, te);
-    for (const [exId, sets] of groups) push(exId, sets[0]!.exercise_name, sets[0]!.exercise_tracking_type, null);
-    for (const exId of added) {
-      const e = byId.get(exId);
-      if (e) push(e.id, e.name, e.tracking_type, null);
-    }
-    return out;
+    return (workout?.exercises ?? []).map((we) => ({
+      exId: we.exercise_id,
+      name: we.exercise_name,
+      type: we.exercise_tracking_type,
+      plan: we.target_sets != null ? { ...we, target_sets: we.target_sets } : null,
+      sets: groups.get(we.exercise_id) ?? [],
+      unavailable: we.exercise_archived || !byId.has(we.exercise_id),
+    }));
   });
 
   const open = (c: Card) => !c.unavailable && (!c.plan || c.sets.length < c.plan.target_sets);
@@ -148,11 +132,13 @@
     return next?.exId ?? cur?.exId ?? cards.find((c) => !c.unavailable)?.exId ?? null;
   }
 
-  const activeIndex = $derived(cards.findIndex((c) => c.exId === activeId));
-  // The route runs red as far as the furthest exercise touched.
-  const routeEnd = $derived(
-    Math.max(activeIndex, ...cards.map((c, i) => (c.sets.length ? i : -1))),
+  // Each exercise's mark on the route; a segment is red only between two
+  // exercises that are done or under way, so an untouched exercise moved up
+  // the list doesn't look walked past.
+  const stops = $derived(
+    cards.map((c) => (c.exId === activeId ? "active" : c.sets.length ? "done" : "todo") as "active" | "done" | "todo"),
   );
+  const segment = (a: number, b: number) => (stops[a] !== "todo" && stops[b] !== "todo" ? "red" : "plan");
 
   const doneSets = $derived(workout?.sets.length ?? 0);
   const plannedSets = $derived(
@@ -168,7 +154,6 @@
     try {
       const s = await api<WorkoutSet>("POST", `/workouts/${id}/sets`, body);
       await reloadWorkout();
-      added = added.filter((x) => x !== card.exId);
       freshSetId = s.id;
       say(`Logged ${label} · ${chip(s)}`, {
         action: {
@@ -207,11 +192,192 @@
     }
   }
 
-  function pick(e: Exercise) {
+  async function pick(e: Exercise) {
     picking = false;
     if (!exercises.some((x) => x.id === e.id)) exercises = [...exercises, e];
-    if (!cards.some((c) => c.exId === e.id)) added = [...added, e.id];
-    activeId = e.id;
+    try {
+      await api("POST", `/workouts/${id}/exercises`, { exercise_id: e.id });
+      await reloadWorkout();
+      activeId = e.id;
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  // ---- removing an exercise ----
+
+  function askRemove(card: Card) {
+    if (card.sets.length) removing = card;
+    else removeExercise(card);
+  }
+
+  async function removeExercise(card: Card) {
+    removing = null;
+    const index = cards.findIndex((c) => c.exId === card.exId);
+    const sets = card.sets;
+    try {
+      await api("DELETE", `/workouts/${id}/exercises/${card.exId}`);
+      await reloadWorkout();
+      if (activeId === card.exId) activeId = pickActive(null);
+      say(sets.length ? `Removed ${card.name} and ${sets.length} ${sets.length === 1 ? "set" : "sets"}` : `Removed ${card.name}`, {
+        action: { label: "Undo", run: () => restoreExercise(card.exId, index, sets, card.plan) },
+      });
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  // Puts a removed exercise back where it was, with its plan and its sets
+  // re-logged, in one request: it comes back whole or not at all.
+  async function restoreExercise(exId: string, index: number, sets: WorkoutSet[], plan: Plan | null) {
+    try {
+      await api("POST", `/workouts/${id}/exercises`, {
+        exercise_id: exId,
+        ...(plan ?? {}),
+        position: index,
+        sets: sets.map((s) => ({
+          reps: s.reps,
+          weight_kg: s.weight_kg,
+          duration_seconds: s.duration_seconds,
+          distance_m: s.distance_m,
+        })),
+      });
+      await reloadWorkout();
+      activeId = pickActive(exId);
+      say("Restored");
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+
+  // ---- reordering ----
+
+  let listEl = $state<HTMLOListElement>();
+  let announce = $state(""); // for screen readers
+
+  // Saves a new order; the list shows it at once and rolls back on failure.
+  async function saveOrder(order: string[]) {
+    if (!workout) return;
+    const before = workout.exercises;
+    const byEx = new Map(before.map((we) => [we.exercise_id, we]));
+    workout = { ...workout, exercises: order.map((x, i) => ({ ...byEx.get(x)!, position: i })) };
+    try {
+      await api("PUT", `/workouts/${id}/exercises`, { exercise_ids: order });
+    } catch (e) {
+      workout = { ...workout, exercises: before };
+      fail(e);
+    }
+  }
+
+  function moved(order: string[], from: number, to: number): string[] {
+    const out = [...order];
+    const [x] = out.splice(from, 1);
+    out.splice(to, 0, x!);
+    return out;
+  }
+
+  // Arrow keys on a focused handle move its exercise one place.
+  async function onHandleKey(e: KeyboardEvent, index: number) {
+    const to = e.key === "ArrowUp" ? index - 1 : e.key === "ArrowDown" ? index + 1 : -1;
+    if (to < 0 || to >= cards.length) return;
+    e.preventDefault();
+    const card = cards[index]!;
+    await saveOrder(moved(cards.map((c) => c.exId), index, to));
+    announce = `${card.name} moved to position ${to + 1} of ${cards.length}`;
+    await tick();
+    listEl?.querySelector<HTMLElement>(`[data-handle="${card.exId}"]`)?.focus();
+  }
+
+  // Pointer drag: the card follows the finger; the others slide to show
+  // where it will land; the order is saved on release.
+  interface Drag {
+    from: number;
+    to: number;
+    pointerId: number;
+    startY: number; // page coordinates, so scrolling while dragging counts
+    dy: number;
+    mids: number[]; // each card's vertical middle when the drag started
+    tops: number[]; // and its top and height, relative to the list
+    heights: number[];
+    size: number; // the dragged card's height plus the gap
+  }
+  let drag = $state<Drag | null>(null);
+  // True for the frame the drop lands in: the list reorders and the drag
+  // offsets go together, so no card animates from where it no longer is.
+  let settling = $state(false);
+  let scrollTimer = 0;
+
+  function onHandleDown(e: PointerEvent, index: number) {
+    if (e.button !== 0 || !listEl) return;
+    const items = [...listEl.querySelectorAll<HTMLElement>(":scope > li:not(.slot)")];
+    const rects = items.map((el) => el.getBoundingClientRect());
+    const listTop = listEl.getBoundingClientRect().top;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag = {
+      from: index,
+      to: index,
+      pointerId: e.pointerId,
+      startY: e.pageY,
+      dy: 0,
+      mids: rects.map((r) => r.top + window.scrollY + r.height / 2),
+      tops: rects.map((r) => r.top - listTop),
+      heights: rects.map((r) => r.height),
+      size: rects[index]!.height + 10,
+    };
+  }
+
+  function onHandleMove(e: PointerEvent) {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    drag.dy = e.pageY - drag.startY;
+    const mid = drag.mids[drag.from]! + drag.dy;
+    drag.to = drag.mids.filter((m, i) => i !== drag!.from && m < mid).length;
+    // Scroll when held near the top or bottom edge.
+    clearInterval(scrollTimer);
+    const edge = 72;
+    const speed = e.clientY < edge ? -12 : e.clientY > window.innerHeight - edge - 56 ? 12 : 0;
+    if (speed) {
+      scrollTimer = window.setInterval(() => {
+        window.scrollBy(0, speed);
+        if (drag) {
+          drag.dy += speed;
+          const m = drag.mids[drag.from]! + drag.dy;
+          drag.to = drag.mids.filter((x, i) => i !== drag!.from && x < m).length;
+        }
+      }, 16);
+    }
+  }
+
+  function onHandleUp(e: PointerEvent) {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    clearInterval(scrollTimer);
+    const { from, to } = drag;
+    settling = true;
+    drag = null;
+    if (from !== to) {
+      const card = cards[from]!;
+      saveOrder(moved(cards.map((c) => c.exId), from, to));
+      announce = `${card.name} moved to position ${to + 1} of ${cards.length}`;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => (settling = false)));
+  }
+
+  // Where the dragged card will land, drawn as an empty planned slot.
+  const slot = $derived.by(() => {
+    if (!drag) return null;
+    const { from, to, tops, heights } = drag;
+    const height = heights[from]!;
+    const top = to > from ? tops[to]! + heights[to]! - height : tops[to]!;
+    return { top, height };
+  });
+
+  // Where each card is drawn during a drag.
+  function shiftOf(i: number): number {
+    if (!drag) return 0;
+    if (i === drag.from) return drag.dy;
+    if (drag.from < drag.to && i > drag.from && i <= drag.to) return -drag.size;
+    if (drag.to < drag.from && i >= drag.to && i < drag.from) return drag.size;
+    return 0;
   }
 
   let saving = Promise.resolve();
@@ -219,7 +385,7 @@
     saving = (async () => {
       try {
         const w = await api<Workout>("PUT", `/workouts/${id}`, patch);
-        workout = { ...workout!, ...w, sets: workout!.sets };
+        workout = { ...workout!, ...w, exercises: workout!.exercises, sets: workout!.sets };
         say("Saved");
       } catch (e) {
         fail(e);
@@ -310,8 +476,12 @@
     </p>
 
     {#if cards.length}
-      <ol class="cards">
+      <ol class="cards" bind:this={listEl} class:dragging={drag} class:settling>
         {#each cards as c, i (c.exId)}
+          <li
+            class:lifted={drag?.from === i}
+            style:transform={drag ? `translateY(${shiftOf(i)}px)` : null}
+          >
           <ExerciseCard
             exerciseId={c.exId}
             code={code(i)}
@@ -322,17 +492,45 @@
             last={prevBy.get(c.exId)}
             unavailable={c.unavailable}
             active={c.exId === activeId}
-            stop={c.exId === activeId ? "active" : c.sets.length ? "done" : "todo"}
-            lineIn={i === 0 ? null : i <= routeEnd ? "red" : "plan"}
-            lineOut={i === cards.length - 1 ? null : i < routeEnd ? "red" : "plan"}
+            stop={stops[i]!}
+            lineIn={i === 0 ? null : segment(i - 1, i)}
+            lineOut={i === cards.length - 1 ? null : segment(i, i + 1)}
             {freshSetId}
             onactivate={() => (activeId = c.exId)}
             onlog={(body) => logSet(c, body)}
             onupdate={updateSet}
             ondelete={(sid) => deleteSet(sid)}
-          />
+            onremove={() => askRemove(c)}
+          >
+            {#snippet handle()}
+              {#if cards.length > 1}
+                <button
+                  type="button"
+                  class="grip"
+                  data-handle={c.exId}
+                  aria-label="Move {c.name}, position {i + 1} of {cards.length}. Drag, or use the arrow keys."
+                  onpointerdown={(e) => onHandleDown(e, i)}
+                  onpointermove={onHandleMove}
+                  onpointerup={onHandleUp}
+                  onpointercancel={onHandleUp}
+                  onkeydown={(e) => onHandleKey(e, i)}
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <circle cx="7" cy="5" r="1.6" /><circle cx="13" cy="5" r="1.6" />
+                    <circle cx="7" cy="10" r="1.6" /><circle cx="13" cy="10" r="1.6" />
+                    <circle cx="7" cy="15" r="1.6" /><circle cx="13" cy="15" r="1.6" />
+                  </svg>
+                </button>
+              {/if}
+            {/snippet}
+          </ExerciseCard>
+          </li>
         {/each}
+        {#if slot}
+          <li class="slot" aria-hidden="true" style:top="{slot.top}px" style:height="{slot.height}px"></li>
+        {/if}
       </ol>
+      <p class="sr-only" aria-live="polite">{announce}</p>
     {:else}
       <p class="state">Nothing logged yet. Add the first exercise.</p>
     {/if}
@@ -418,6 +616,20 @@
   </div>
 </Sheet>
 
+<Sheet
+  bind:open={() => removing !== null, (v) => !v && (removing = null)}
+  title="Remove {removing?.name ?? 'exercise'}?"
+>
+  {#if removing}
+    {@const n = removing.sets.length}
+    <p class="ask">This also deletes the {n} {n === 1 ? "set" : "sets"} logged for it in this workout.</p>
+    <div class="two">
+      <Button onclick={() => (removing = null)}>Keep it</Button>
+      <Button variant="ink" onclick={() => removing && removeExercise(removing)}>Remove</Button>
+    </div>
+  {/if}
+</Sheet>
+
 <Sheet bind:open={naming} title="Save as template">
   <form
     onsubmit={(e) => {
@@ -498,8 +710,88 @@
     color: var(--ink);
   }
   .cards {
+    position: relative;
     margin: 0;
     padding: 0;
+    list-style: none;
+  }
+  /* .cards.settling outranks .cards > li's transition below. */
+  .cards.settling > li {
+    transition: none;
+  }
+  .cards > li {
+    position: relative;
+    transition: transform 160ms var(--ease);
+  }
+  /* The card being dragged follows the finger, lifted over the rest. */
+  .cards > li.lifted {
+    z-index: 5;
+    transition: none;
+  }
+  /* Lifted: a raised-surface rule (2px, like sheets and the tab bar) on the
+     highlight paper; 2.5px stays the active card's. No shadow. */
+  .cards > li.lifted :global(.item:not(.active) .card) {
+    border-width: 2px;
+    background: var(--paper-hi);
+  }
+  .cards > li.lifted .grip {
+    color: var(--ink);
+  }
+  /* The landing slot: the world's dashed "planned" box, with its own stretch
+     of dashed route in the gutter so the line doesn't break. */
+  .cards > li.slot {
+    position: absolute;
+    left: 26px;
+    right: 0;
+    border: 1.5px dashed var(--ink-2);
+    border-radius: var(--r);
+    pointer-events: none;
+  }
+  .cards > li.slot::before {
+    content: "";
+    position: absolute;
+    left: -19px;
+    top: 0;
+    bottom: -10px; /* through the gap below, as each card's own segment does */
+    border-left: 1.5px dashed var(--ink-2);
+  }
+  .dragging {
+    user-select: none;
+  }
+  .grip {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 2px 2px 0 0;
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    cursor: grab;
+    touch-action: none; /* the finger drags the card, not the page */
+  }
+  .grip:active {
+    cursor: grabbing;
+    color: var(--ink);
+  }
+  .grip svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cards > li {
+      transition: none;
+    }
   }
   .state {
     margin: 32px 0 16px;

@@ -29,3 +29,8 @@ ansible/.build/
 web/node_modules/
 web/dist/*
 !web/dist/.gitkeep
+
+# Local dev tooling for e2e runs and screenshots (see .devtools/README.md);
+# stack.sh writes web/dev-login.html for logged-in screenshots.
+.devtools/
+web/dev-login.html

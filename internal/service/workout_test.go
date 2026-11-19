@@ -73,7 +73,7 @@ func TestFinishWorkout(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			store := fakeWorkouts{}
-			svc := NewWorkoutService(nil, store, nil)
+			svc := NewWorkoutService(nil, nil, store, nil, nil)
 			id := newWorkout(t, store, user, tc.performedAt, tc.finishedAt)
 
 			w, err := svc.FinishWorkout(ctx, user, id)
@@ -103,7 +103,7 @@ func TestFinishWorkout(t *testing.T) {
 
 func TestFinishWorkoutOtherUser(t *testing.T) {
 	store := fakeWorkouts{}
-	svc := NewWorkoutService(nil, store, nil)
+	svc := NewWorkoutService(nil, nil, store, nil, nil)
 	id := newWorkout(t, store, uuid.New(), time.Now().Add(-time.Hour), nil)
 
 	if _, err := svc.FinishWorkout(context.Background(), uuid.New(), id); !errors.Is(err, ErrForbidden) {
@@ -120,7 +120,7 @@ func TestUpdateWorkoutKeepsDuration(t *testing.T) {
 	start := time.Date(2026, 11, 18, 18, 0, 0, 0, time.UTC)
 	end := start.Add(52 * time.Minute)
 	store := fakeWorkouts{}
-	svc := NewWorkoutService(nil, store, nil)
+	svc := NewWorkoutService(nil, nil, store, nil, nil)
 	id := newWorkout(t, store, user, start, &end)
 
 	// Moving the date a day back moves the end with it.

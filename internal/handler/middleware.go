@@ -25,6 +25,11 @@ type idURI struct {
 	ID uuid.UUID `uri:"id,parser=encoding.TextUnmarshaler"`
 }
 
+type workoutExerciseURI struct {
+	ID         uuid.UUID `uri:"id,parser=encoding.TextUnmarshaler"`
+	ExerciseID uuid.UUID `uri:"exerciseID,parser=encoding.TextUnmarshaler"`
+}
+
 type setURI struct {
 	ID    uuid.UUID `uri:"id,parser=encoding.TextUnmarshaler"`
 	SetID uuid.UUID `uri:"setID,parser=encoding.TextUnmarshaler"`

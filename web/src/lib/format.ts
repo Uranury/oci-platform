@@ -1,4 +1,4 @@
-import type { TemplateExercise, WorkoutSet } from "./types";
+import type { Plan, WorkoutSet } from "./types";
 
 // The product is English-only; dates follow suit whatever the device locale.
 const LOCALE = "en-GB";
@@ -61,7 +61,7 @@ export function fmtSets(sets: WorkoutSet[]): string {
 }
 
 // The plan for one exercise: "3 × 8", "3 × 8–12", "3 × 400 m", "3 × 1:30".
-export function fmtTarget(t: TemplateExercise): string {
+export function fmtTarget(t: Plan): string {
   const each: string[] = [];
   if (t.target_reps_min != null) {
     each.push(

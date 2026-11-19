@@ -70,6 +70,19 @@ type Workout struct {
 	FinishedAt  *time.Time
 }
 
+type WorkoutExercise struct {
+	ID                    uuid.UUID
+	WorkoutID             uuid.UUID
+	ExerciseID            uuid.UUID
+	Position              int
+	TargetSets            *int
+	TargetRepsMin         *int
+	TargetRepsMax         *int
+	TargetDurationSeconds *int
+	TargetDistanceM       *float64
+	Notes                 *string
+}
+
 type WorkoutSet struct {
 	ID              uuid.UUID
 	WorkoutID       uuid.UUID

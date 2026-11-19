@@ -189,6 +189,90 @@ func (h *WorkoutHandler) ExerciseHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, hist)
 }
 
+// --- the workout's exercise list ---
+
+// AddExercise lists an exercise in the workout before any set is logged.
+func (h *WorkoutHandler) AddExercise(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	// Everything but exercise_id is optional: undoing a removal sends the
+	// plan (target_sets set), the sets to re-log and the position.
+	var req struct {
+		ExerciseID            uuid.UUID    `json:"exercise_id"`
+		TargetSets            *int         `json:"target_sets"`
+		TargetRepsMin         *int         `json:"target_reps_min"`
+		TargetRepsMax         *int         `json:"target_reps_max"`
+		TargetDurationSeconds *int         `json:"target_duration_seconds"`
+		TargetDistanceM       *float64     `json:"target_distance_m"`
+		Notes                 *string      `json:"notes"`
+		Position              *int         `json:"position"`
+		Sets                  []setRequest `json:"sets"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.ExerciseID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exercise_id is required"})
+		return
+	}
+	var plan *models.TemplateExercise
+	if req.TargetSets != nil {
+		plan = &models.TemplateExercise{
+			TargetSets: *req.TargetSets, TargetRepsMin: req.TargetRepsMin, TargetRepsMax: req.TargetRepsMax,
+			TargetDurationSeconds: req.TargetDurationSeconds, TargetDistanceM: req.TargetDistanceM, Notes: req.Notes,
+		}
+	}
+	in := service.AddExerciseInput{Plan: plan, Position: req.Position}
+	for _, s := range req.Sets {
+		in.Sets = append(in.Sets, s.input())
+	}
+	if err := h.svc.AddExercise(c.Request.Context(), userID, uri.ID, req.ExerciseID, in); err != nil {
+		_ = c.Error(err).SetMeta("workout or exercise")
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ReorderExercises sets the workout's exercise order: {"exercise_ids": [...]}
+// listing each of its exercises once.
+func (h *WorkoutHandler) ReorderExercises(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var req struct {
+		ExerciseIDs []uuid.UUID `json:"exercise_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exercise_ids must be a list of exercise IDs"})
+		return
+	}
+	if err := h.svc.ReorderExercises(c.Request.Context(), userID, uri.ID, req.ExerciseIDs); err != nil {
+		_ = c.Error(err).SetMeta("workout")
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// RemoveExercise takes an exercise out of the workout with its sets.
+func (h *WorkoutHandler) RemoveExercise(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri workoutExerciseURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	n, err := h.svc.RemoveExercise(c.Request.Context(), userID, uri.ID, uri.ExerciseID)
+	if err != nil {
+		_ = c.Error(err).SetMeta("exercise in this workout")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sets_deleted": n})
+}
+
 // --- sets ---
 
 type setRequest struct {

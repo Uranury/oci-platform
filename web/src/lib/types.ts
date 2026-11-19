@@ -16,6 +16,27 @@ export interface WorkoutSet {
   created_at: string;
 }
 
+// The targets for one exercise: from a template, or frozen into a workout.
+export interface Plan {
+  target_sets: number;
+  target_reps_min: number | null;
+  target_reps_max: number | null;
+  target_duration_seconds: number | null;
+  target_distance_m: number | null;
+  notes?: string | null;
+}
+
+// One entry in a workout's own exercise list, in display order. Targets are
+// null for an exercise added during the workout.
+export interface WorkoutExercise extends Omit<Plan, "target_sets"> {
+  exercise_id: string;
+  exercise_name: string;
+  exercise_tracking_type: TrackingType;
+  exercise_archived: boolean;
+  position: number;
+  target_sets: number | null;
+}
+
 export interface Workout {
   id: string;
   name?: string | null;
@@ -23,11 +44,12 @@ export interface Workout {
   performed_at: string;
   template_id?: string | null;
   finished_at?: string | null;
+  exercises: WorkoutExercise[];
   sets: WorkoutSet[];
 }
 
 // GET /workouts: a workout without its sets, plus a summary of them.
-export interface WorkoutSummary extends Omit<Workout, "sets"> {
+export interface WorkoutSummary extends Omit<Workout, "sets" | "exercises"> {
   set_count: number;
   exercises: string[]; // names, in the order first logged
 }
