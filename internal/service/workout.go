@@ -84,6 +84,25 @@ func (s *WorkoutService) PreviousSets(ctx context.Context, userID, id uuid.UUID)
 	return s.sets.ListPrevious(ctx, userID, id, w.PerformedAt)
 }
 
+// LastSets is "last time" for every exercise the user has logged: the sets
+// from the most recent workout that included it, up to now.
+func (s *WorkoutService) LastSets(ctx context.Context, userID uuid.UUID) ([]models.PreviousSession, error) {
+	return s.sets.ListPrevious(ctx, userID, uuid.Nil, time.Now())
+}
+
+// ExerciseHistoryLength is how many recent workouts ExerciseHistory returns.
+const ExerciseHistoryLength = 10
+
+// ExerciseHistory returns the user's most recent workouts with the exercise,
+// newest first, each with its sets of it. ErrNotFound when the exercise
+// isn't visible to the user (another user's custom exercise).
+func (s *WorkoutService) ExerciseHistory(ctx context.Context, userID, exerciseID uuid.UUID) ([]models.PreviousSession, error) {
+	if _, err := s.exercises.GetVisible(ctx, userID, exerciseID); err != nil {
+		return nil, err
+	}
+	return s.sets.ListHistory(ctx, userID, exerciseID, ExerciseHistoryLength)
+}
+
 // UpdateWorkout overwrites name and notes; performedAt is kept when zero.
 // Moving performedAt moves FinishedAt by the same amount, so a corrected
 // date keeps the session's duration.

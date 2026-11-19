@@ -104,6 +104,14 @@ export function fmtNames(names: string[], shown = 3): string {
   return `${names.slice(0, shown).join(", ")} +${names.length - shown}`;
 }
 
+// The lead-in for a "last time" line: "Today", "Yesterday", "Last Thu",
+// "Last 12 Nov".
+export function fmtLast(iso: string, now = new Date()): string {
+  const when = fmtAgo(iso, now);
+  if (when === "today" || when === "yesterday") return when[0]!.toUpperCase() + when.slice(1);
+  return `Last ${when}`;
+}
+
 export function fmtDay(iso: string): string {
   return new Date(iso).toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "short" });
 }

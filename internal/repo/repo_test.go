@@ -270,3 +270,44 @@ func TestWorkoutListSummaries(t *testing.T) {
 		t.Errorf("exercises %v, want %v", got[1].Exercises, want)
 	}
 }
+
+func TestExerciseHistory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pool := testdb.New(t)
+	alice, bob := testdb.User(t, pool), testdb.User(t, pool)
+	bench := testdb.SystemExercise(t, pool, "bench-press").ID
+	squat := testdb.SystemExercise(t, pool, "back-squat").ID
+	now := time.Now()
+
+	// Alice benches on days 1..4 ago (two sets each, 60+day kg), squats
+	// once without benching, and Bob benches yesterday.
+	for d := 4; d >= 1; d-- {
+		w := testdb.Workout(t, pool, alice, now.Add(-time.Duration(d)*24*time.Hour))
+		testdb.Set(t, pool, w.ID, bench, float64(60+d), 5)
+		testdb.Set(t, pool, w.ID, squat, 100, 5)
+		testdb.Set(t, pool, w.ID, bench, float64(60+d), 4)
+	}
+	squatOnly := testdb.Workout(t, pool, alice, now)
+	testdb.Set(t, pool, squatOnly.ID, squat, 100, 5)
+	bobs := testdb.Workout(t, pool, bob, now.Add(-time.Hour))
+	testdb.Set(t, pool, bobs.ID, bench, 200, 1)
+
+	got, err := repo.NewWorkoutSet(pool).ListHistory(ctx, alice, bench, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d workouts, want 3 (the limit; not the squat-only one, not Bob's)", len(got))
+	}
+	for i, p := range got {
+		wantKg := float64(60 + i + 1) // newest (1 day ago) first
+		if p.ExerciseID != bench || len(p.Sets) != 2 {
+			t.Fatalf("workout %d: %+v, want 2 bench sets", i, p)
+		}
+		if *p.Sets[0].WeightKg != wantKg || *p.Sets[0].Reps != 5 || *p.Sets[1].Reps != 4 {
+			t.Errorf("workout %d: sets %v kg x %d, %d; want %v kg x 5 then 4 (logged order)",
+				i, *p.Sets[0].WeightKg, *p.Sets[0].Reps, *p.Sets[1].Reps, wantKg)
+		}
+	}
+}

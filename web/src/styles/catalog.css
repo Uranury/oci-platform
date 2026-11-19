@@ -51,6 +51,9 @@ body.catalog-body {
   --line: 1.5px solid var(--ink);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* Native controls (checkboxes, select menus, date pickers) drawn light;
+     the legacy :root sets color-scheme: dark. */
+  color-scheme: light;
   margin: 0;
   background: var(--paper);
   color: var(--ink);

@@ -22,6 +22,9 @@ type WorkoutSet interface {
 	// recent workout dated before `before` that included it, skipping
 	// excludeWorkoutID. Sessions are ordered by exercise ID.
 	ListPrevious(ctx context.Context, userID, excludeWorkoutID uuid.UUID, before time.Time) ([]models.PreviousSession, error)
+	// ListHistory returns the user's most recent workouts (newest first, at
+	// most maxWorkouts) that include the exercise, each with its sets of it.
+	ListHistory(ctx context.Context, userID, exerciseID uuid.UUID, maxWorkouts int) ([]models.PreviousSession, error)
 }
 
 type workoutSet struct {
@@ -96,6 +99,27 @@ func (r *workoutSet) Update(ctx context.Context, m *models.WorkoutSet) error {
 
 func (r *workoutSet) Delete(ctx context.Context, id uuid.UUID) error {
 	return affected(r.q.DeleteWorkoutSet(ctx, id))
+}
+
+func (r *workoutSet) ListHistory(ctx context.Context, userID, exerciseID uuid.UUID, maxWorkouts int) ([]models.PreviousSession, error) {
+	rows, err := r.q.ListExerciseHistory(ctx, dbgen.ListExerciseHistoryParams{
+		UserID: userID, ExerciseID: exerciseID, MaxWorkouts: int32(maxWorkouts), //nolint:gosec // small constant
+	})
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := []models.PreviousSession{}
+	for _, row := range rows {
+		set := toWorkoutSet(row.WorkoutSet, row.ExerciseName, row.ExerciseTrackingType)
+		if n := len(out); n == 0 || out[n-1].WorkoutID != set.WorkoutID {
+			out = append(out, models.PreviousSession{
+				ExerciseID: set.ExerciseID, WorkoutID: set.WorkoutID, PerformedAt: row.WorkoutPerformedAt,
+			})
+		}
+		last := &out[len(out)-1]
+		last.Sets = append(last.Sets, set)
+	}
+	return out, nil
 }
 
 func (r *workoutSet) ListPrevious(ctx context.Context, userID, excludeWorkoutID uuid.UUID, before time.Time) ([]models.PreviousSession, error) {

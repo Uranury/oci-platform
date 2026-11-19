@@ -2,12 +2,17 @@
 // routes that have been redesigned. Everything else still renders through
 // the legacy code until its screen is redone.
 import { mount, unmount, type Component } from "svelte";
+import ExercisesScreen from "./exercises/ExercisesScreen.svelte";
 import HomeScreen from "./home/HomeScreen.svelte";
 import LoginScreen from "./login/LoginScreen.svelte";
 import "./styles/catalog.css";
 import WorkoutScreen from "./workout/WorkoutScreen.svelte";
 
-export type Screen = { kind: "home" } | { kind: "login" } | { kind: "workout"; id: string };
+export type Screen =
+  | { kind: "home" }
+  | { kind: "login" }
+  | { kind: "exercises" }
+  | { kind: "workout"; id: string };
 
 let current: Record<string, unknown> | null = null;
 
@@ -28,7 +33,7 @@ export function showScreen(target: HTMLElement, screen: Screen): void {
   const [component, props] =
     screen.kind === "workout"
       ? [WorkoutScreen as Component<{ id: string }>, { id: screen.id }]
-      : [screen.kind === "home" ? HomeScreen : LoginScreen, {}];
+      : [{ home: HomeScreen, login: LoginScreen, exercises: ExercisesScreen }[screen.kind], {}];
   current = mount(component as Component<Record<string, unknown>>, { target, props });
 }
 
