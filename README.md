@@ -40,6 +40,8 @@ All request/response bodies are JSON.
 | GET    | `/exercises`      | Bearer | Library defaults + your own custom exercises (archived hidden) |
 | POST   | `/exercises`      | Bearer | Create a custom exercise (all category fields required; 409 if you already have that name) |
 | GET    | `/exercises/similar?name=` | Bearer | Defaults whose names closely match, for a "did you mean…" warning |
+| GET    | `/exercises/last` | Bearer | "Last time" for every exercise you've logged: the sets from the most recent workout with it |
+| GET    | `/exercises/{id}/history` | Bearer | Your last 10 workouts with this exercise, newest first, each with its sets of it |
 | PUT    | `/exercises/{id}` | Bearer | Edit your custom exercise (403 for defaults) |
 | DELETE | `/exercises/{id}` | Bearer | Delete your custom exercise; archived instead if it has logged sets (`{"result":"deleted"\|"archived"}`) |
 | POST   | `/exercises/{id}/duplicate` | Bearer | Copy a default (or your own) into a new custom exercise; optional `{"name"}` |

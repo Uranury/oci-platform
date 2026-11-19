@@ -159,6 +159,7 @@ func TestOtherUsersGet404(t *testing.T) {
 		{"PUT", e, exerciseBody("Hijacked")},
 		{"DELETE", e, nil},
 		{"POST", e + "/duplicate", map[string]any{}},
+		{"GET", e + "/history", nil},
 
 		{"GET", w, nil},
 		{"PUT", w, map[string]any{"name": "Hijacked"}},
@@ -280,5 +281,49 @@ func TestServerErrorsAreLogged(t *testing.T) {
 		if !strings.Contains(line, "level=ERROR") || !strings.Contains(line, "err=") || !strings.Contains(line, "closed pool") {
 			t.Errorf("GET %s: log line lacks the error: %q", path, line)
 		}
+	}
+}
+
+// Last time per exercise across workouts, and one exercise's history: both
+// only ever the caller's own sets.
+func TestExerciseLastAndHistory(t *testing.T) {
+	t.Parallel()
+	h := newServer(t)
+	alice, bob := signUp(t, h), signUp(t, h)
+
+	var ex idOnly
+	alice.must(http.StatusCreated, "POST", "/exercises", exerciseBody("Alice press"), &ex)
+	logWorkout := func(c *client, kg float64) {
+		var w idOnly
+		c.must(http.StatusCreated, "POST", "/workouts", map[string]any{}, &w)
+		var set idOnly
+		c.must(http.StatusCreated, "POST", "/workouts/"+w.ID+"/sets",
+			map[string]any{"exercise_id": ex.ID, "reps": 5, "weight_kg": kg}, &set)
+	}
+	logWorkout(alice, 60)
+	logWorkout(alice, 62.5)
+
+	type session struct {
+		ExerciseID string `json:"exercise_id"`
+		Sets       []struct {
+			WeightKg float64 `json:"weight_kg"`
+		} `json:"sets"`
+	}
+	var last []session
+	alice.must(http.StatusOK, "GET", "/exercises/last", nil, &last)
+	if len(last) != 1 || last[0].ExerciseID != ex.ID || len(last[0].Sets) != 1 || last[0].Sets[0].WeightKg != 62.5 {
+		t.Errorf("last: got %+v, want the 62.5 kg set from the newest workout", last)
+	}
+
+	var hist []session
+	alice.must(http.StatusOK, "GET", "/exercises/"+ex.ID+"/history", nil, &hist)
+	if len(hist) != 2 || hist[0].Sets[0].WeightKg != 62.5 || hist[1].Sets[0].WeightKg != 60 {
+		t.Errorf("history: got %+v, want 62.5 then 60 (newest first)", hist)
+	}
+
+	var bobLast []session
+	bob.must(http.StatusOK, "GET", "/exercises/last", nil, &bobLast)
+	if len(bobLast) != 0 {
+		t.Errorf("Bob's last sets include Alice's: %+v", bobLast)
 	}
 }

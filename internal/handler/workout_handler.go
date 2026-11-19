@@ -160,6 +160,35 @@ func (h *WorkoutHandler) PreviousSets(c *gin.Context) {
 	c.JSON(http.StatusOK, prev)
 }
 
+// LastSets is "last time" for every exercise the user has logged, for the
+// exercise library.
+func (h *WorkoutHandler) LastSets(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	last, err := h.svc.LastSets(c.Request.Context(), userID)
+	if err != nil {
+		_ = c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load last sets"})
+		return
+	}
+	c.JSON(http.StatusOK, last)
+}
+
+// ExerciseHistory is the user's recent workouts with one exercise.
+func (h *WorkoutHandler) ExerciseHistory(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var uri idURI
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	hist, err := h.svc.ExerciseHistory(c.Request.Context(), userID, uri.ID)
+	if err != nil {
+		_ = c.Error(err).SetMeta("exercise")
+		return
+	}
+	c.JSON(http.StatusOK, hist)
+}
+
 // --- sets ---
 
 type setRequest struct {

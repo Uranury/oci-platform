@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { fmtAgo, fmtSets, fmtTarget } from "../lib/format";
+  import { fmtLast, fmtSets, fmtTarget } from "../lib/format";
   import { FIELDS, chip, prefill, suspicious, toBody, type Values } from "../lib/sets";
   import type { Previous, SetBody, TemplateExercise, TrackingType, WorkoutSet } from "../lib/types";
   import BiroRing from "../ui/BiroRing.svelte";
@@ -141,7 +141,7 @@
       <p class="today">Today <b>{fmtSets(sets)}</b></p>
     {/if}
     {#if last}
-      <p class="meta">Last {fmtAgo(last.performed_at)} <b>{fmtSets(last.sets)}</b></p>
+      <p class="meta">{fmtLast(last.performed_at)} <b>{fmtSets(last.sets)}</b></p>
     {:else if active}
       <p class="meta">First time logging this</p>
     {/if}

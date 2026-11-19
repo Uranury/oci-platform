@@ -115,6 +115,70 @@ func (q *Queries) GetWorkoutSet(ctx context.Context, id uuid.UUID) (GetWorkoutSe
 	return i, err
 }
 
+const listExerciseHistory = `-- name: ListExerciseHistory :many
+WITH recent AS (
+    SELECT w.id, w.performed_at
+    FROM workouts w
+    WHERE w.user_id = $2
+      AND EXISTS (SELECT 1 FROM workout_sets s WHERE s.workout_id = w.id AND s.exercise_id = $1)
+    ORDER BY w.performed_at DESC, w.id
+    LIMIT $3
+)
+SELECT s.id, s.workout_id, s.exercise_id, s.reps, s.weight_kg, s.created_at, s.duration_seconds, s.distance_m, e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    r.performed_at AS workout_performed_at
+FROM recent r
+JOIN workout_sets s ON s.workout_id = r.id AND s.exercise_id = $1
+JOIN exercises e ON e.id = s.exercise_id
+ORDER BY r.performed_at DESC, r.id, s.created_at
+`
+
+type ListExerciseHistoryParams struct {
+	ExerciseID  uuid.UUID
+	UserID      uuid.UUID
+	MaxWorkouts int32
+}
+
+type ListExerciseHistoryRow struct {
+	WorkoutSet           WorkoutSet
+	ExerciseName         string
+	ExerciseTrackingType models.TrackingType
+	WorkoutPerformedAt   time.Time
+}
+
+// The user's most recent workouts that include the exercise (newest first,
+// at most @max_workouts), each with its sets of it in logged order.
+func (q *Queries) ListExerciseHistory(ctx context.Context, arg ListExerciseHistoryParams) ([]ListExerciseHistoryRow, error) {
+	rows, err := q.db.Query(ctx, listExerciseHistory, arg.ExerciseID, arg.UserID, arg.MaxWorkouts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExerciseHistoryRow{}
+	for rows.Next() {
+		var i ListExerciseHistoryRow
+		if err := rows.Scan(
+			&i.WorkoutSet.ID,
+			&i.WorkoutSet.WorkoutID,
+			&i.WorkoutSet.ExerciseID,
+			&i.WorkoutSet.Reps,
+			&i.WorkoutSet.WeightKg,
+			&i.WorkoutSet.CreatedAt,
+			&i.WorkoutSet.DurationSeconds,
+			&i.WorkoutSet.DistanceM,
+			&i.ExerciseName,
+			&i.ExerciseTrackingType,
+			&i.WorkoutPerformedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPreviousSets = `-- name: ListPreviousSets :many
 WITH latest AS (
     SELECT DISTINCT ON (s.exercise_id) s.exercise_id, w.id AS workout_id

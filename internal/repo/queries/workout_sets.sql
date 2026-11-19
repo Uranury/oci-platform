@@ -54,3 +54,21 @@ JOIN workout_sets s ON s.exercise_id = l.exercise_id AND s.workout_id = l.workou
 JOIN exercises e ON e.id = s.exercise_id
 JOIN workouts w ON w.id = s.workout_id
 ORDER BY s.exercise_id, s.created_at;
+
+-- name: ListExerciseHistory :many
+-- The user's most recent workouts that include the exercise (newest first,
+-- at most @max_workouts), each with its sets of it in logged order.
+WITH recent AS (
+    SELECT w.id, w.performed_at
+    FROM workouts w
+    WHERE w.user_id = @user_id
+      AND EXISTS (SELECT 1 FROM workout_sets s WHERE s.workout_id = w.id AND s.exercise_id = @exercise_id)
+    ORDER BY w.performed_at DESC, w.id
+    LIMIT @max_workouts
+)
+SELECT sqlc.embed(s), e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    r.performed_at AS workout_performed_at
+FROM recent r
+JOIN workout_sets s ON s.workout_id = r.id AND s.exercise_id = @exercise_id
+JOIN exercises e ON e.id = s.exercise_id
+ORDER BY r.performed_at DESC, r.id, s.created_at;

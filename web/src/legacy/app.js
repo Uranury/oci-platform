@@ -56,12 +56,9 @@ function fmtDate(iso) {
   });
 }
 
-
-
 function fmtWeight(kg) {
   return (Math.round(kg * 100) / 100).toString();
 }
-
 
 // "today", "yesterday", "3 days ago", then a date.
 function fmtAgo(iso) {
@@ -110,7 +107,9 @@ function route() {
     topbar.hidden = true;
     const m = hash.match(/^#\/workouts\/([0-9a-f-]{36})$/);
     return showScreen(document.getElementById("screen"),
-      hash === "#/login" ? { kind: "login" } : m ? { kind: "workout", id: m[1] } : { kind: "home" });
+      hash === "#/login" ? { kind: "login" }
+        : hash === "#/exercises" ? { kind: "exercises" }
+          : m ? { kind: "workout", id: m[1] } : { kind: "home" });
   }
   hideScreen();
   app.hidden = false;
@@ -123,7 +122,6 @@ function route() {
 // The screens still rendered by this file, or null for the Svelte ones.
 function legacyView(hash) {
   let m;
-  if (hash === "#/exercises") return () => (nav("exercises"), viewExercises().catch(fail));
   if (hash === "#/templates") return () => (nav("templates"), viewTemplates().catch(fail));
   if (hash === "#/templates/new") return () => (nav("templates"), viewTemplate(null).catch(fail));
   if ((m = hash.match(/^#\/templates\/([0-9a-f-]{36})$/))) return () => (nav("templates"), viewTemplate(m[1]).catch(fail));
@@ -140,36 +138,12 @@ window.addEventListener("hashchange", route);
 
 document.getElementById("logout").addEventListener("click", logout);
 
-// ---------- exercise library helpers ----------
-
-// Category lists come from the server (GET /exercise-options), which reads
-// the single Go definition; nothing here hard-codes allowed values.
-let optionsPromise = null;
-function getOptions() {
-  if (!optionsPromise) {
-    optionsPromise = api("GET", "/exercise-options", undefined, { auth: false })
-      .catch((e) => { optionsPromise = null; throw e; });
-  }
-  return optionsPromise;
-}
-
-function labelOf(list, value) {
-  const o = list.find((x) => x.value === value);
-  return o ? o.label : value;
-}
-
-function exerciseMeta(opts, e) {
-  return [labelOf(opts.equipment, e.equipment), labelOf(opts.muscles, e.primary_muscle)].join(" · ");
-}
+// ---------- helpers for the template views ----------
 
 function fmtDuration(sec) {
   const m = Math.floor(sec / 60), s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-
-
-
-
 
 function select(list, value, { placeholder, required } = {}) {
   return h("select", { required },
@@ -179,80 +153,6 @@ function select(list, value, { placeholder, required } = {}) {
 
 function field(label, control, hint) {
   return h("div", {}, h("label", {}, label), control, hint ? h("p.hint", {}, hint) : null);
-}
-
-// Create/edit form for a custom exercise. onSave receives the request body.
-function exerciseForm(opts, { initial = {}, title, submitLabel, onSave, onCancel }) {
-  const name = h("input", { value: initial.name || "", required: true, maxlength: 100, placeholder: "e.g. Paused squat" });
-  const tracking = select(opts.tracking_types, initial.tracking_type || "weight_reps");
-  const equipment = select(opts.equipment, initial.equipment, { placeholder: "Choose…", required: true });
-  const pattern = select(opts.movement_patterns, initial.movement_pattern, { placeholder: "Choose…", required: true });
-  const primary = select(opts.muscles, initial.primary_muscle, { placeholder: "Choose…", required: true });
-  const mechanic = select(opts.mechanics, initial.mechanic || "compound");
-
-  const secondary = new Set(initial.secondary_muscles || []);
-  const chips = opts.muscles.map((m) => {
-    const box = h("input", { type: "checkbox", value: m.value, checked: secondary.has(m.value) });
-    box.addEventListener("change", () => { box.checked ? secondary.add(m.value) : secondary.delete(m.value); });
-    return { m, box, el: h("label.chip", {}, box, m.label) };
-  });
-  // The primary muscle can't also be secondary.
-  function syncChips() {
-    for (const c of chips) {
-      const isPrimary = c.m.value === primary.value;
-      c.box.disabled = isPrimary;
-      if (isPrimary) { c.box.checked = false; secondary.delete(c.m.value); }
-      c.el.classList.toggle("disabled", isPrimary);
-    }
-  }
-  primary.addEventListener("change", syncChips);
-  syncChips();
-
-  const submit = h("button.primary", { type: "submit" }, submitLabel);
-  return h("form.card.stack", {
-    onsubmit: async (e) => {
-      e.preventDefault();
-      submit.disabled = true;
-      try {
-        await onSave({
-          name: name.value.trim(),
-          tracking_type: tracking.value,
-          equipment: equipment.value,
-          movement_pattern: pattern.value,
-          primary_muscle: primary.value,
-          secondary_muscles: [...secondary],
-          mechanic: mechanic.value,
-        });
-      } catch (ex) {
-        fail(ex);
-      } finally {
-        submit.disabled = false;
-      }
-    },
-  },
-    h("h2", {}, title),
-    field("Name", name),
-    field("How do you log it?", tracking),
-    h("div.row", {}, field("Equipment", equipment), field("Mechanic", mechanic)),
-    h("div.row", {}, field("Movement pattern", pattern), field("Primary muscle", primary)),
-    h("div", {}, h("label", {}, "Secondary muscles"), h("div.chips", {}, chips.map((c) => c.el))),
-    h("div.row", {},
-      onCancel ? h("button", { type: "button", onclick: onCancel }, "Cancel") : null,
-      submit),
-  );
-}
-
-// Creates a custom exercise, first warning (never blocking) if the name is
-// close to a default. Returns the new exercise, or null if the user backed out.
-async function createExercise(body) {
-  const similar = await api("GET", "/exercises/similar?name=" + encodeURIComponent(body.name));
-  if (similar.length) {
-    const names = similar.map((e) => `"${e.name}"`).join(", ");
-    if (!confirm(`The library already has ${names}. You can use that instead. Create your own "${body.name}" anyway?`)) {
-      return null;
-    }
-  }
-  return api("POST", "/exercises", body);
 }
 
 // "1:30" or plain seconds -> seconds; used by template targets.
@@ -464,88 +364,6 @@ async function viewTemplate(id) {
     h("h1", {}, id ? "Edit template" : "New template"),
     form,
     ...extra,
-  );
-}
-
-// ---------- views: exercises ----------
-
-// mode: null (list), "new", or an exercise id being edited.
-async function viewExercises(mode = null) {
-  if (!app.childElementCount) render(h("h1", {}, "Exercises"), h("p.muted", {}, "Loading…"));
-  const [exercises, opts] = await Promise.all([api("GET", "/exercises"), getOptions()]);
-  const mine = exercises.filter((e) => !e.system);
-  const library = exercises.filter((e) => e.system);
-  const back = () => viewExercises().catch(fail);
-
-  if (mode === "new") {
-    return render(h("h1", {}, "Exercises"), exerciseForm(opts, {
-      title: "New exercise",
-      submitLabel: "Create",
-      onCancel: back,
-      onSave: async (body) => {
-        const e = await createExercise(body);
-        if (e) { toast(`Created "${e.name}"`); back(); }
-      },
-    }));
-  }
-  const editing = mine.find((e) => e.id === mode);
-  if (editing) {
-    return render(h("h1", {}, "Exercises"), exerciseForm(opts, {
-      initial: editing,
-      title: `Edit "${editing.name}"`,
-      submitLabel: "Save",
-      onCancel: back,
-      onSave: async (body) => {
-        await api("PUT", "/exercises/" + editing.id, body);
-        toast("Saved");
-        back();
-      },
-    }));
-  }
-
-  const mineList = mine.length
-    ? h("ul.list.card", {}, mine.map((e) =>
-        h("li", {},
-          h("div", {}, h("div", {}, e.name), h("div.muted.small", {}, exerciseMeta(opts, e))),
-          h("div.actions", {},
-            h("button.small", { onclick: () => viewExercises(e.id).catch(fail) }, "Edit"),
-            h("button.icon", {
-              "aria-label": "Delete " + e.name,
-              title: "Delete",
-              onclick: async () => {
-                if (!confirm(`Delete "${e.name}"?\n\nIf it has logged sets it's archived instead: hidden from the picker, still shown in your history.`)) return;
-                try {
-                  const r = await api("DELETE", "/exercises/" + e.id);
-                  toast(r.result === "archived" ? `Archived "${e.name}"` : `Deleted "${e.name}"`);
-                  back();
-                } catch (ex) { fail(ex); }
-              },
-            }, "×")))))
-    : h("p.muted.small", {}, "None yet. Create one, or customize one from the library below.");
-
-  const libraryList = h("ul.list.card", {}, library.map((e) =>
-    h("li", {},
-      h("div", {}, h("div", {}, e.name), h("div.muted.small", {}, exerciseMeta(opts, e))),
-      h("button.small", {
-        title: "Make your own editable copy",
-        onclick: async () => {
-          const n = prompt(`Name for your copy of "${e.name}"`, e.name);
-          if (n === null) return;
-          try {
-            const cp = await api("POST", `/exercises/${e.id}/duplicate`, { name: n.trim() });
-            viewExercises(cp.id).catch(fail);
-          } catch (ex) { fail(ex); }
-        },
-      }, "Customize"))));
-
-  render(
-    h("h1", {}, "Exercises"),
-    h("button.primary.block", { onclick: () => viewExercises("new").catch(fail) }, "+ New exercise"),
-    h("h2.section", {}, "My exercises"),
-    mineList,
-    h("h2.section", {}, "Library"),
-    h("p.muted.small", {}, "Defaults everyone shares. Read-only; tap Customize to make your own version."),
-    libraryList,
   );
 }
 

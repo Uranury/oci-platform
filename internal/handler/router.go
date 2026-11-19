@@ -31,6 +31,8 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	api.GET("/exercises", exerciseH.List)
 	api.POST("/exercises", exerciseH.Create)
 	api.GET("/exercises/similar", exerciseH.Similar)
+	api.GET("/exercises/last", workoutH.LastSets)
+	api.GET("/exercises/:id/history", workoutH.ExerciseHistory)
 	api.PUT("/exercises/:id", exerciseH.Update)
 	api.DELETE("/exercises/:id", exerciseH.Delete)
 	api.POST("/exercises/:id/duplicate", exerciseH.Duplicate)
