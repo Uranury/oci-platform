@@ -25,14 +25,6 @@
     stroke-dasharray: 1;
     animation: pen 420ms var(--ease) both;
   }
-  @keyframes pen {
-    from {
-      stroke-dashoffset: 1;
-    }
-    to {
-      stroke-dashoffset: 0;
-    }
-  }
   @media (prefers-reduced-motion: reduce) {
     .fresh path {
       animation: none;

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { api } from "../lib/api";
   import type { Exercise, ExerciseOptions, NewExercise } from "../lib/types";
+  import Button from "../ui/Button.svelte";
+  import Field from "../ui/Field.svelte";
+  import Notice from "../ui/Notice.svelte";
 
   let { exercises, options, taken, onpick, onerror }: {
     exercises: Exercise[];
@@ -82,10 +85,9 @@
 {/snippet}
 
 {#if !creating}
-  <label class="search">
-    <span class="cap">Find exercise</span>
+  <Field label="Find exercise">
     <input type="search" bind:value={query} placeholder="Name, equipment or muscle" autocomplete="off" />
-  </label>
+  </Field>
 
   {#if mine.length}
     <h3>My exercises</h3>
@@ -99,9 +101,9 @@
     <p class="none">Nothing matches “{query.trim()}”.</p>
   {/if}
 
-  <button type="button" class="ghost wide" onclick={startCreating}>
-    New exercise{q ? ` “${query.trim()}”` : ""}
-  </button>
+  <div class="more">
+    <Button wide onclick={startCreating}>New exercise{q ? ` “${query.trim()}”` : ""}</Button>
+  </div>
 {:else}
   <form
     class="create"
@@ -110,44 +112,38 @@
       create();
     }}
   >
-    <label>
-      <span class="cap">Name</span>
+    <Field label="Name">
       <input bind:value={form.name} required maxlength="100" placeholder="e.g. Paused squat" />
-    </label>
-    <label>
-      <span class="cap">How do you log it?</span>
+    </Field>
+    <Field label="How do you log it?">
       <select bind:value={form.tracking_type}>
         {#each options.tracking_types as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
       </select>
-    </label>
+    </Field>
     <div class="two">
-      <label>
-        <span class="cap">Equipment</span>
+      <Field label="Equipment">
         <select bind:value={form.equipment} required>
           <option value="" disabled>Choose…</option>
           {#each options.equipment as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
         </select>
-      </label>
-      <label>
-        <span class="cap">Mechanic</span>
+      </Field>
+      <Field label="Mechanic">
         <select bind:value={form.mechanic}>
           {#each options.mechanics as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
         </select>
-      </label>
-      <label>
-        <span class="cap">Movement</span>
+      </Field>
+      <Field label="Movement">
         <select bind:value={form.movement_pattern} required>
           <option value="" disabled>Choose…</option>
           {#each options.movement_patterns as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
         </select>
-      </label>
-      <label>
-        <span class="cap">Primary muscle</span>
+      </Field>
+      <Field label="Primary muscle">
         <select bind:value={form.primary_muscle} required>
           <option value="" disabled>Choose…</option>
           {#each options.muscles as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
         </select>
-      </label>
+      </Field>
     </div>
     <fieldset>
       <legend class="cap">Secondary muscles</legend>
@@ -168,46 +164,22 @@
     </fieldset>
 
     {#if similar}
-      <div class="warn" role="alert">
-        <p>The library already has {similar.map((e) => `“${e.name}”`).join(", ")}.</p>
-        <div class="two">
-          {#each similar.slice(0, 1) as e (e.id)}
-            <button type="button" class="ghost" onclick={() => onpick(e)}>Use {e.name}</button>
-          {/each}
-          <button type="button" class="ghost" disabled={saving} onclick={() => create(true)}>Create anyway</button>
-        </div>
-      </div>
+      <Notice message={`The library already has ${similar.map((e) => `“${e.name}”`).join(", ")}.`}>
+        {#each similar.slice(0, 1) as e (e.id)}
+          <Button onclick={() => onpick(e)}>Use {e.name}</Button>
+        {/each}
+        <Button disabled={saving} onclick={() => create(true)}>Create anyway</Button>
+      </Notice>
     {/if}
 
     <div class="two">
-      <button type="button" class="ghost" onclick={() => (creating = false)}>Back</button>
-      <button type="submit" class="ink" disabled={saving}>{saving ? "Saving…" : "Create & add"}</button>
+      <Button onclick={() => (creating = false)}>Back</Button>
+      <Button type="submit" variant="ink" disabled={saving}>{saving ? "Saving…" : "Create & add"}</Button>
     </div>
   </form>
 {/if}
 
 <style>
-  .cap {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  input:not([type="checkbox"]),
-  select {
-    width: 100%;
-    min-height: 48px;
-    box-sizing: border-box;
-    padding: 0 12px;
-    border: var(--line);
-    border-radius: var(--r);
-    background: var(--paper-hi);
-  }
-  input::placeholder {
-    color: var(--ink-2);
-  }
   h3 {
     margin: 18px 0 4px;
     font-size: 11px;
@@ -251,6 +223,9 @@
   .none {
     margin: 16px 0;
   }
+  .more {
+    margin-top: 18px;
+  }
   .create {
     display: grid;
     gap: 14px;
@@ -289,42 +264,5 @@
   .tag.off {
     opacity: 0.45;
     cursor: default;
-  }
-  .warn {
-    border: 2px solid var(--ink);
-    border-radius: var(--r);
-    padding: 10px 12px 12px;
-  }
-  .warn p {
-    margin: 0 0 10px;
-    font-weight: 700;
-  }
-  .ink,
-  .ghost {
-    min-height: 52px;
-    border-radius: var(--r);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    cursor: pointer;
-  }
-  .ink {
-    border: 0;
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .ghost {
-    border: var(--line);
-    background: transparent;
-  }
-  .wide {
-    width: 100%;
-    margin-top: 18px;
-  }
-  .search {
-    display: block;
-  }
-  button:disabled {
-    opacity: 0.55;
   }
 </style>

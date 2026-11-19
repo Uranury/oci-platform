@@ -3,9 +3,11 @@
   import { fmtAgo, fmtSets, fmtTarget } from "../lib/format";
   import { FIELDS, chip, prefill, suspicious, toBody, type Values } from "../lib/sets";
   import type { Previous, SetBody, TemplateExercise, TrackingType, WorkoutSet } from "../lib/types";
-  import BiroRing from "./BiroRing.svelte";
-  import BiroTick from "./BiroTick.svelte";
-  import Stepper from "./Stepper.svelte";
+  import BiroRing from "../ui/BiroRing.svelte";
+  import BiroTick from "../ui/BiroTick.svelte";
+  import Button from "../ui/Button.svelte";
+  import Notice from "../ui/Notice.svelte";
+  import Stepper from "../ui/Stepper.svelte";
 
   type Stop = "done" | "active" | "todo";
 
@@ -194,32 +196,30 @@
           {/key}
 
           {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+          <!-- While a warning is up, its own buttons are the choice. -->
           {#if warning}
-            <div class="warn" role="alert">
-              <p>{warning}</p>
-              <div class="pair">
-                <button type="button" class="ghost" onclick={() => (warning = null)}>Fix it</button>
-                <button type="button" class="ghost" onclick={() => submit(true)}>
-                  {editing ? "Save anyway" : "Log anyway"}
-                </button>
-              </div>
+            <div class="gap">
+              <Notice message={warning}>
+                <Button onclick={() => (warning = null)}>Fix it</Button>
+                <Button onclick={() => submit(true)}>{editing ? "Save anyway" : "Log anyway"}</Button>
+              </Notice>
             </div>
-          {/if}
-
-          {#if warning}
-            <!-- the warning's own buttons are the choice for now -->
           {:else if editing}
             <div class="pair">
-              <button type="button" class="ghost" disabled={busy} onclick={() => (editingId = null)}>Cancel</button>
-              <button type="submit" class="ink" disabled={busy}>Save {code}{sets.indexOf(editing) + 1}</button>
+              <Button disabled={busy} onclick={() => (editingId = null)}>Cancel</Button>
+              <Button type="submit" variant="ink" disabled={busy}>Save {code}{sets.indexOf(editing) + 1}</Button>
             </div>
-            <button type="button" class="danger" disabled={busy} onclick={remove}>
-              Delete set {code}{sets.indexOf(editing) + 1}
-            </button>
+            <div class="apart">
+              <Button variant="danger" disabled={busy} onclick={remove}>
+                Delete set {code}{sets.indexOf(editing) + 1}
+              </Button>
+            </div>
           {:else}
-            <button type="submit" class="ink log" disabled={busy}>
-              {busy ? "Logging…" : `Log set ${code}${nextNo}`}
-            </button>
+            <div class="gap">
+              <Button type="submit" variant="ink" size="lg" wide disabled={busy}>
+                {busy ? "Logging…" : `Log set ${code}${nextNo}`}
+              </Button>
+            </div>
           {/if}
         </form>
       {/if}
@@ -425,19 +425,12 @@
     grid-template-columns: repeat(var(--n), minmax(0, 1fr));
     gap: 10px;
   }
-  .problem,
-  .warn p {
+  .problem {
     margin: 10px 0 0;
     font-weight: 700;
   }
-  .warn {
-    margin-top: 10px;
-    padding: 10px 12px 12px;
-    border: 2px solid var(--ink);
-    border-radius: var(--r);
-  }
-  .warn p {
-    margin: 0 0 10px;
+  .gap {
+    margin-top: 12px;
   }
   .pair {
     display: grid;
@@ -445,52 +438,10 @@
     gap: 10px;
     margin-top: 12px;
   }
-  .warn .pair {
-    margin-top: 0;
-  }
-  .ink,
-  .ghost,
-  .danger {
-    min-height: 52px;
-    border-radius: var(--r);
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-  .ink {
-    border: 0;
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .log {
-    width: 100%;
-    margin-top: 12px;
-    min-height: 56px;
-    font-size: 15px;
-  }
-  .ghost {
-    border: var(--line);
-    background: transparent;
-  }
-  .danger {
-    display: block;
-    margin: 28px 0 0 auto;
-    min-height: 44px;
-    padding: 0 4px;
-    border: 0;
-    background: none;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    font-size: 12px;
-  }
-  button:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .ink:active:not(:disabled) {
-    transform: translateY(1px);
+  /* Delete stays well away from Save. */
+  .apart {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 28px;
   }
 </style>

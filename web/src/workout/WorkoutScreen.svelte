@@ -23,9 +23,11 @@
   } from "../lib/types";
   import ExerciseCard from "./ExerciseCard.svelte";
   import ExercisePicker from "./ExercisePicker.svelte";
-  import Sheet from "./Sheet.svelte";
-  import TabBar from "./TabBar.svelte";
-  import Toast, { type ToastMsg } from "./Toast.svelte";
+  import Button from "../ui/Button.svelte";
+  import Field from "../ui/Field.svelte";
+  import Sheet from "../ui/Sheet.svelte";
+  import TabBar from "../ui/TabBar.svelte";
+  import Toast, { type ToastMsg } from "../ui/Toast.svelte";
 
   let { id, host }: { id: string; host: Host } = $props();
 
@@ -292,15 +294,13 @@
       Workouts
     </a>
     {#if workout}
-      <button type="button" class="finish" disabled={busy} onclick={finish}>
-        {workout.finished_at ? "Done" : "Finish"}
-      </button>
+      <Button size="sm" disabled={busy} onclick={finish}>{workout.finished_at ? "Done" : "Finish"}</Button>
     {/if}
   </header>
 
   {#if loadError}
     <p class="state" role="alert">{loadError}</p>
-    <button type="button" class="ghost" onclick={() => ((loadError = null), load())}>Try again</button>
+    <Button onclick={() => ((loadError = null), load())}>Try again</Button>
   {:else if !workout || !options}
     <p class="state" aria-busy="true">Loading workout…</p>
   {:else}
@@ -343,49 +343,51 @@
       <p class="state">Nothing logged yet. Add the first exercise.</p>
     {/if}
 
-    <button type="button" class={cards.length ? "ghost add" : "ink add"} onclick={() => (picking = true)}>
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" /></svg>
-      Add exercise
-    </button>
+    <div class="add">
+      <Button variant={cards.length ? "ghost" : "ink"} wide onclick={() => (picking = true)}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" /></svg>
+        Add exercise
+      </Button>
+    </div>
 
     <details class="details">
       <summary>Workout details</summary>
-      <label>
-        <span class="cap">Name</span>
+      <div class="details-body">
+      <Field label="Name">
         <input
           value={workout.name ?? ""}
           placeholder="e.g. Push day"
           onchange={(e) => saveDetails({ name: e.currentTarget.value })}
         />
-      </label>
-      <label>
-        <span class="cap">Started</span>
+      </Field>
+      <Field label="Started">
         <input
           type="datetime-local"
           value={toLocalInput(workout.performed_at)}
           onchange={(e) =>
             e.currentTarget.value && saveDetails({ performed_at: new Date(e.currentTarget.value).toISOString() })}
         />
-      </label>
-      <label>
-        <span class="cap">Notes</span>
+      </Field>
+      <Field label="Notes">
         <textarea rows="3" value={workout.notes ?? ""} onchange={(e) => saveDetails({ notes: e.currentTarget.value })}
         ></textarea>
-      </label>
+      </Field>
       {#if template}
         <p class="from">From template <a href="#/templates/{template.id}">{template.name}</a></p>
       {/if}
       {#if workout.sets.length && !template}
-        <button
-          type="button"
-          class="ghost"
+        <Button
+          wide
           onclick={() => {
             templateName = workout?.name ?? "";
             naming = true;
-          }}>Save as template</button
+          }}>Save as template</Button
         >
       {/if}
-      <button type="button" class="danger" onclick={() => (confirming = "delete")}>Delete workout</button>
+      <div class="apart">
+        <Button variant="danger" onclick={() => (confirming = "delete")}>Delete workout</Button>
+      </div>
+      </div>
     </details>
   {/if}
 </div>
@@ -415,10 +417,10 @@
       : `This deletes “${title}” and all ${doneSets} of its sets.`}
   </p>
   <div class="two">
-    <button type="button" class="ghost" onclick={() => (confirming = null)}>Keep it</button>
-    <button type="button" class="ink" disabled={busy} onclick={removeWorkout}>
+    <Button onclick={() => (confirming = null)}>Keep it</Button>
+    <Button variant="ink" disabled={busy} onclick={removeWorkout}>
       {confirming === "discard" ? "Discard" : "Delete"}
-    </button>
+    </Button>
   </div>
 </Sheet>
 
@@ -429,13 +431,12 @@
       saveAsTemplate();
     }}
   >
-    <label>
-      <span class="cap">Template name</span>
+    <Field label="Template name">
       <input bind:value={templateName} required maxlength="100" />
-    </label>
+    </Field>
     <div class="two">
-      <button type="button" class="ghost" onclick={() => (naming = false)}>Cancel</button>
-      <button type="submit" class="ink" disabled={busy || !templateName.trim()}>Save</button>
+      <Button onclick={() => (naming = false)}>Cancel</Button>
+      <Button type="submit" variant="ink" disabled={busy || !templateName.trim()}>Save</Button>
     </div>
   </form>
 </Sheet>
@@ -465,8 +466,7 @@
     text-transform: uppercase;
     text-decoration: none;
   }
-  .back svg,
-  .add svg {
+  .back svg {
     width: 20px;
     height: 20px;
   }
@@ -477,17 +477,6 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-  .finish {
-    min-height: 44px;
-    padding: 0 18px;
-    border: var(--line);
-    border-radius: 4px;
-    background: transparent;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
   }
   h1 {
     margin: 8px 0 8px;
@@ -528,38 +517,17 @@
     margin-left: 0;
   }
   .add {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
     width: calc(100% - 26px);
     margin: 4px 0 0 26px;
-  }
-  .ink,
-  .ghost {
-    min-height: 52px;
-    border-radius: var(--r);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    cursor: pointer;
-  }
-  .ink {
-    border: 0;
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .ghost {
-    border: var(--line);
-    background: transparent;
   }
   .details {
     margin: 28px 0 0 26px;
     border-top: 1.5px solid var(--ink);
-    display: grid;
-    gap: 14px;
   }
-  .details[open] {
+  /* <details> can't lay out its own contents as a grid, so a wrapper does. */
+  .details-body {
+    display: grid;
+    gap: 16px;
     padding-bottom: 8px;
   }
   summary {
@@ -571,51 +539,15 @@
     text-transform: uppercase;
     cursor: pointer;
   }
-  .details label,
-  form label {
-    display: block;
-    margin-bottom: 14px;
+  form {
+    display: grid;
+    gap: 14px;
   }
-  .details .ghost {
-    width: 100%;
-  }
-  .cap {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  input,
-  textarea {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 48px;
-    padding: 10px 12px;
-    border: var(--line);
-    border-radius: var(--r);
-    background: var(--paper-hi);
-  }
-  textarea {
-    resize: vertical;
-  }
-  input::placeholder {
-    color: var(--ink-2);
-  }
-  .danger {
-    display: block;
-    margin: 36px 0 0 auto;
-    min-height: 44px;
-    border: 0;
-    background: none;
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    cursor: pointer;
+  /* Delete stays well away from everything else. */
+  .apart {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 22px;
   }
   .from {
     margin: 0;
@@ -629,9 +561,5 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
-  }
-  button:disabled {
-    opacity: 0.55;
-    cursor: default;
   }
 </style>
