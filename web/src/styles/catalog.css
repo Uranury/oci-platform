@@ -82,3 +82,24 @@ body.catalog-body :focus-visible {
   color: inherit;
   text-underline-offset: 3px;
 }
+
+/* A field or group caption: small, bold, tracked caps. */
+body.catalog-body .cap {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The ballpoint stroke: an SVG path with pathLength="1" and
+   stroke-dasharray: 1 draws itself in. Used by BiroRing and BiroTick. */
+@keyframes pen {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

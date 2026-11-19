@@ -4,6 +4,7 @@ PLAN.md
 PRODUCT.md
 DESIGN.md
 .idea/
+.reports/
 *.exe
 .env
 *.docx
