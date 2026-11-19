@@ -127,7 +127,9 @@ ansible-playbook site.yml --syntax-check && ansible-lint site.yml
   The OCI security list and NSGs remain the outer layer.
 - **ACLs last.** Every module that rewrites a file replaces its inode and loses
   its ACL, so `acl` runs after `sudoers` and `postgresql`.
-- **Release source.** By default the playbook builds the binary on the laptop
+- **Release source.** By default the playbook builds the frontend
+  (`npm ci && npm run build` in `web/`, so the laptop needs Node, see
+  `web/.nvmrc`) and then the binary on the laptop
   (`CGO_ENABLED=0 GOOS=linux GOARCH=arm64`, `-trimpath`, so the same commit gives
   the same bytes) and names the release `git describe --always --dirty`. To
   deploy the GitHub Actions artifact instead:

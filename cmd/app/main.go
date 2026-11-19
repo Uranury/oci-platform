@@ -110,9 +110,12 @@ func run() error {
 	workoutHandler := handler.NewWorkoutHandler(workoutService)
 	templateHandler := handler.NewTemplateHandler(templateService)
 
-	webFS, err := web.Static()
+	webFS, built, err := web.Static()
 	if err != nil {
 		return err
+	}
+	if !built {
+		slog.Warn("frontend not built: serving a placeholder at /; run `npm --prefix web run build` before `go build`")
 	}
 
 	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, templateHandler, jwtIssuer, webFS)

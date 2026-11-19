@@ -9,3 +9,7 @@
 !pkg/
 !web/
 **/*_test.go
+# The frontend is built inside the image (local/Dockerfile's web stage);
+# host node_modules (platform-specific binaries) and dist stay out.
+web/node_modules/
+web/dist/app/

@@ -16,6 +16,18 @@
     deploy_release_id: "{{ deploy_release_version if deploy_release_version | length > 0 else deploy_release_git.stdout }}"
     deploy_release_src: "{{ deploy_release_binary if deploy_release_binary | length > 0 else deploy_release_build_dir ~ '/' ~ app_name }}"
 
+# web/ is a Vite project; go build embeds its output (web/dist/app), so it
+# has to be built first. Needs Node (version in web/.nvmrc) on the controller.
+- name: Build the frontend on the controller
+  ansible.builtin.shell:
+    cmd: npm ci && npm run build
+    chdir: "{{ deploy_release_source_dir }}/web"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  when: deploy_release_binary | length == 0
+
 # Deterministic with -trimpath: the same commit gives the same bytes, so the
 # copy below stays unchanged on a second run.
 - name: Build the linux binary for the target architecture on the controller

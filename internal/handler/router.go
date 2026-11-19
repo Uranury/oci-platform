@@ -3,6 +3,7 @@ package handler
 import (
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/Uranury/oci-platform/internal/auth"
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,14 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
+		}
+		// Vite puts a content hash in every file name under /assets/, so
+		// those never change; everything else (index.html, favicon) is
+		// revalidated so a deploy shows up on the next load.
+		if strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			c.Header("Cache-Control", "no-cache")
 		}
 		files.ServeHTTP(c.Writer, c.Request)
 	})

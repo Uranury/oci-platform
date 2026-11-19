@@ -21,3 +21,8 @@ ansible/.build/
 .claude/skills/
 .claude/settings.local.json
 .impeccable/
+
+# Frontend (web/ is a Vite project; dist/.gitkeep keeps `go build` working unbuilt)
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
