@@ -83,11 +83,27 @@
     return_content: true
   register: verify_frontend
 
-- name: "Frontend: the page is the workout tracker"
+# The page is the Vite build (web/dist/app), not the "frontend not built"
+# placeholder a binary compiled without `npm run build` serves.
+- name: "Frontend: the page is the built workout tracker"
   ansible.builtin.assert:
     that:
       - verify_frontend.content_type is search('text/html')
-      - "'/app.js' in verify_frontend.content"
+      - "'<title>Lift Log</title>' in verify_frontend.content"
+      - "'Frontend not built' not in verify_frontend.content"
+      - verify_frontend.content is search('/assets/index-[A-Za-z0-9_-]+[.]js')
+    quiet: true
+
+- name: "Frontend: GET the hashed script the page references"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}{{ verify_frontend.content | regex_search('/assets/index-[A-Za-z0-9_-]+[.]js') }}"
+  register: verify_frontend_js
+
+- name: "Frontend: the script is JavaScript, cached for good"
+  ansible.builtin.assert:
+    that:
+      - verify_frontend_js.content_type is search('javascript')
+      - verify_frontend_js.cache_control | default('') is search('immutable')
     quiet: true
 
 - name: "API: GET /workouts without a token is 401"
