@@ -303,17 +303,29 @@
     size: number; // the dragged card's height plus the gap
   }
   let drag = $state<Drag | null>(null);
+  // The exercise being lifted. An expanded card is drawn collapsed while it
+  // moves (it would otherwise cover the screen and its tall slot would need
+  // a long drag to pass one short card); it opens again where it lands.
+  let lifting = $state<string | null>(null);
+  let liftPointer = -1;
   // True for the frame the drop lands in: the list reorders and the drag
   // offsets go together, so no card animates from where it no longer is.
   let settling = $state(false);
   let scrollTimer = 0;
 
-  function onHandleDown(e: PointerEvent, index: number) {
+  async function onHandleDown(e: PointerEvent, index: number) {
     if (e.button !== 0 || !listEl) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    liftPointer = e.pointerId;
+    if (cards[index]!.exId === activeId) {
+      lifting = activeId;
+      await tick(); // measure the collapsed card
+      if (liftPointer !== e.pointerId) return; // released before the lift
+    }
+    lifting = cards[index]!.exId;
     const items = [...listEl.querySelectorAll<HTMLElement>(":scope > li:not(.slot)")];
     const rects = items.map((el) => el.getBoundingClientRect());
     const listTop = listEl.getBoundingClientRect().top;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag = {
       from: index,
       to: index,
@@ -349,11 +361,16 @@
   }
 
   function onHandleUp(e: PointerEvent) {
-    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (e.pointerId === liftPointer) liftPointer = -1;
+    if (!drag || e.pointerId !== drag.pointerId) {
+      lifting = null;
+      return;
+    }
     clearInterval(scrollTimer);
     const { from, to } = drag;
     settling = true;
     drag = null;
+    lifting = null;
     if (from !== to) {
       const card = cards[from]!;
       saveOrder(moved(cards.map((c) => c.exId), from, to));
@@ -491,7 +508,7 @@
             sets={c.sets}
             last={prevBy.get(c.exId)}
             unavailable={c.unavailable}
-            active={c.exId === activeId}
+            active={c.exId === activeId && c.exId !== lifting}
             stop={stops[i]!}
             lineIn={i === 0 ? null : segment(i - 1, i)}
             lineOut={i === cards.length - 1 ? null : segment(i, i + 1)}
