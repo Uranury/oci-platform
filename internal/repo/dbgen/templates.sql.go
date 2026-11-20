@@ -214,7 +214,12 @@ func (q *Queries) ListTemplateLastUsed(ctx context.Context, ownerID uuid.UUID) (
 
 const listTemplates = `-- name: ListTemplates :many
 SELECT t.id, t.user_id, t.name, t.notes, t.created_at, t.updated_at,
-    (SELECT count(*) FROM template_exercises te WHERE te.template_id = t.id)::int AS exercise_count
+    (SELECT count(*) FROM template_exercises te WHERE te.template_id = t.id)::int AS exercise_count,
+    coalesce((
+        SELECT array_agg(e.name ORDER BY te.position)
+        FROM template_exercises te JOIN exercises e ON e.id = te.exercise_id
+        WHERE te.template_id = t.id
+    ), '{}')::text[] AS exercise_names
 FROM workout_templates t
 WHERE t.user_id = $1
 ORDER BY lower(t.name)
@@ -223,6 +228,7 @@ ORDER BY lower(t.name)
 type ListTemplatesRow struct {
 	WorkoutTemplate WorkoutTemplate
 	ExerciseCount   int
+	ExerciseNames   []string
 }
 
 // Name order here; repo.Template.List re-sorts by last use (the last-used
@@ -244,6 +250,7 @@ func (q *Queries) ListTemplates(ctx context.Context, ownerID uuid.UUID) ([]ListT
 			&i.WorkoutTemplate.CreatedAt,
 			&i.WorkoutTemplate.UpdatedAt,
 			&i.ExerciseCount,
+			&i.ExerciseNames,
 		); err != nil {
 			return nil, err
 		}

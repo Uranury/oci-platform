@@ -13,7 +13,12 @@ SELECT * FROM workout_templates WHERE id = @id AND user_id = @owner_id;
 -- times come from ListTemplateLastUsed).
 -- name: ListTemplates :many
 SELECT sqlc.embed(t),
-    (SELECT count(*) FROM template_exercises te WHERE te.template_id = t.id)::int AS exercise_count
+    (SELECT count(*) FROM template_exercises te WHERE te.template_id = t.id)::int AS exercise_count,
+    coalesce((
+        SELECT array_agg(e.name ORDER BY te.position)
+        FROM template_exercises te JOIN exercises e ON e.id = te.exercise_id
+        WHERE te.template_id = t.id
+    ), '{}')::text[] AS exercise_names
 FROM workout_templates t
 WHERE t.user_id = @owner_id
 ORDER BY lower(t.name);

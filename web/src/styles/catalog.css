@@ -1,6 +1,5 @@
-/* The redesign's world: newsprint, one black ink, red spot ink for the
-   progress route, biro blue for hand marks. Scoped to .catalog so the
-   legacy screens keep their own styles until they're redone. */
+/* The app's world: newsprint, one black ink, red spot ink for the
+   progress route, biro blue for hand marks. See DESIGN.md. */
 
 @font-face {
   font-family: "League Gothic";
@@ -35,7 +34,7 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-body.catalog-body {
+body {
   --paper: #dedad1;
   --paper-hi: #e8e5de; /* raised panels: same paper, less grey */
   --ink: #1c1b19;
@@ -51,8 +50,7 @@ body.catalog-body {
   --line: 1.5px solid var(--ink);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Native controls (checkboxes, select menus, date pickers) drawn light;
-     the legacy :root sets color-scheme: dark. */
+  /* Native controls (checkboxes, select menus, date pickers) drawn light. */
   color-scheme: light;
   margin: 0;
   background: var(--paper);
@@ -65,29 +63,29 @@ body.catalog-body {
   scrollbar-color: var(--ink-2) var(--paper);
 }
 
-body.catalog-body ::selection {
+body ::selection {
   background: var(--biro);
   color: var(--paper);
 }
 
-body.catalog-body :focus-visible {
+body :focus-visible {
   outline: 2px solid var(--biro);
   outline-offset: 2px;
 }
 
 /* :where() keeps these resets at zero specificity, so component styles win. */
-:where(body.catalog-body) :where(button, input, textarea, select) {
+:where(body) :where(button, input, textarea, select) {
   font: inherit;
   color: inherit;
 }
 
-:where(body.catalog-body) :where(a) {
+:where(body) :where(a) {
   color: inherit;
   text-underline-offset: 3px;
 }
 
 /* A field or group caption: small, bold, tracked caps. */
-body.catalog-body .cap {
+body .cap {
   display: block;
   margin-bottom: 4px;
   font-size: 11px;

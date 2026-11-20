@@ -1,6 +1,6 @@
-// The API client, shared by the Svelte screens and the legacy UI so there is
-// one token store and one refresh in flight (refresh tokens rotate: two
-// concurrent refreshes would revoke each other).
+// The API client, shared by every screen so there is one token store and
+// one refresh in flight (refresh tokens rotate: two concurrent refreshes
+// would revoke each other).
 
 const ACCESS = "access_token";
 const REFRESH = "refresh_token";

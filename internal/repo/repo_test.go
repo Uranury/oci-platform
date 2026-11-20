@@ -229,6 +229,48 @@ func TestTemplatesListMostDueFirst(t *testing.T) {
 	}
 }
 
+func TestTemplatesListExerciseNames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pool := testdb.New(t)
+	alice := testdb.User(t, pool)
+	bench := testdb.SystemExercise(t, pool, "bench-press")
+	squat := testdb.SystemExercise(t, pool, "back-squat")
+	templates := repo.NewTemplate(pool)
+
+	full := &models.Template{UserID: alice, Name: "A full"}
+	empty := &models.Template{UserID: alice, Name: "B empty"}
+	for _, tp := range []*models.Template{full, empty} {
+		if err := templates.Create(ctx, tp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Plan order, not name order.
+	if err := templates.ReplaceExercises(ctx, full.ID, []models.TemplateExercise{
+		{ExerciseID: squat.ID, TargetSets: 3}, {ExerciseID: bench.ID, TargetSets: 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := templates.List(ctx, alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, tp := range list {
+		if tp.Exercises == nil {
+			t.Errorf("%s: exercises is nil, want a JSON array", tp.Name)
+		}
+		got[tp.Name] = tp.Exercises
+	}
+	if want := []string{squat.Name, bench.Name}; !slices.Equal(got["A full"], want) {
+		t.Errorf("A full exercises = %v, want %v", got["A full"], want)
+	}
+	if len(got["B empty"]) != 0 {
+		t.Errorf("B empty exercises = %v, want none", got["B empty"])
+	}
+}
+
 func TestWorkoutListSummaries(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
