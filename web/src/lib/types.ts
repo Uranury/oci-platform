@@ -60,6 +60,7 @@ export interface TemplateSummary {
   name: string;
   notes?: string | null;
   exercise_count: number;
+  exercises: string[]; // names, in plan order
   last_used_at?: string | null;
 }
 

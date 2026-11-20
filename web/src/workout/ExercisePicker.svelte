@@ -6,10 +6,11 @@
   import Button from "../ui/Button.svelte";
   import Field from "../ui/Field.svelte";
 
-  let { exercises, options, taken, onpick, onerror }: {
+  let { exercises, options, taken, takenLabel = "In this workout", onpick, onerror }: {
     exercises: Exercise[];
     options: ExerciseOptions;
-    taken: Set<string>; // already in this workout
+    taken: Set<string>; // already in this workout (or plan)
+    takenLabel?: string;
     onpick: (e: Exercise) => void;
     onerror: (e: unknown) => void;
   } = $props();
@@ -39,7 +40,7 @@
   <li>
     <button type="button" class="pick" disabled={taken.has(e.id)} onclick={() => onpick(e)}>
       <span class="name">{e.name}</span>
-      <span class="sub">{taken.has(e.id) ? "In this workout" : meta(e)}</span>
+      <span class="sub">{taken.has(e.id) ? takenLabel : meta(e)}</span>
     </button>
   </li>
 {/snippet}

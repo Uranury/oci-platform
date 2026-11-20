@@ -1,6 +1,5 @@
 // A message for whichever screen shows next ("Workout saved · 12 sets"),
-// set right before navigating away. Svelte screens take it on mount; the
-// legacy router shows it after rendering a legacy view.
+// set right before navigating away. Screens take it on mount.
 let pending: string | null = null;
 
 export function flash(message: string): void {

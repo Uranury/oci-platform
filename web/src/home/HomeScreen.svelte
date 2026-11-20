@@ -280,12 +280,13 @@
   .lead {
     margin: 0 0 12px;
   }
-  /* Room inside the biro loop so it circles the name instead of crossing it. */
+  /* Room inside the biro loop so it circles the name instead of crossing
+     it; the loop's tail starts inside its left edge, so more on the left. */
   .ringed {
     position: relative;
     display: inline-block;
-    padding: 4px 14px 2px;
-    margin-left: -4px;
+    padding: 4px 16px 2px 20px;
+    margin-left: -6px;
   }
   .big {
     font: 400 42px/0.95 var(--gothic);

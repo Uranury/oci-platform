@@ -78,7 +78,7 @@ func (r *template) List(ctx context.Context, ownerID uuid.UUID) ([]models.Templa
 	byID := make(map[uuid.UUID]*models.TemplateSummary, len(rows))
 	out := make([]models.TemplateSummary, len(rows))
 	for i, row := range rows {
-		out[i] = models.TemplateSummary{Template: toTemplate(row.WorkoutTemplate), ExerciseCount: row.ExerciseCount}
+		out[i] = models.TemplateSummary{Template: toTemplate(row.WorkoutTemplate), ExerciseCount: row.ExerciseCount, Exercises: row.ExerciseNames}
 		byID[row.WorkoutTemplate.ID] = &out[i]
 	}
 	for _, u := range used {

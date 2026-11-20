@@ -19,10 +19,12 @@ type Template struct {
 }
 
 // TemplateSummary is a template as listed: without its exercises, but with
-// how many it has and when a workout was last started from it.
+// how many it has, their names in plan order, and when a workout was last
+// started from it.
 type TemplateSummary struct {
 	Template
 	ExerciseCount int        `json:"exercise_count"`
+	Exercises     []string   `json:"exercises"`
 	LastUsedAt    *time.Time `json:"last_used_at"`
 }
 
