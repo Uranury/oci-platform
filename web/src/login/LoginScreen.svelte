@@ -35,7 +35,7 @@
 </script>
 
 <main class="auth">
-  <h1>Lift Log</h1>
+  <h1>Overlift</h1>
   <p class="tag">Your training log</p>
 
   <div class="modes" role="group" aria-label="Log in or sign up">

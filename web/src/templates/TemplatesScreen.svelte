@@ -62,7 +62,7 @@
 
 <div class="screen">
   <header class="top">
-    <span class="brand">Lift Log</span>
+    <span class="brand">Overlift</span>
     {#if templates?.length}
       <Button size="sm" href="#/templates/new">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" /></svg>

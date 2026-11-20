@@ -1,6 +1,6 @@
 # oci-platform
 
-Lift Log: a small workout tracker (log workouts, exercises and sets) as a Go REST API plus an embedded web frontend, with JWT-based auth and refresh-token rotation. Built as the application layer for a Linux/DevOps coursework project (3-tier deploy: Nginx → this API → Postgres).
+Overlift: a small workout tracker (log workouts, exercises and sets) as a Go REST API plus an embedded web frontend, with JWT-based auth and refresh-token rotation. Built as the application layer for a Linux/DevOps coursework project (3-tier deploy: Nginx → this API → Postgres).
 
 ## Stack
 
