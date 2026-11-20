@@ -87,7 +87,7 @@
 
 <div class="screen">
   <header class="top">
-    <span class="brand">Lift Log</span>
+    <span class="brand">Overlift</span>
     <button type="button" class="quiet" onclick={logout}>Log out</button>
   </header>
 

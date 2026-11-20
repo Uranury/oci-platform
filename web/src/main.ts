@@ -1,4 +1,4 @@
-// Lift Log frontend: hash routing onto the Svelte screens.
+// Overlift frontend: hash routing onto the Svelte screens.
 //   #/login  #/  #/workouts/<id>  #/exercises
 //   #/templates  #/templates/new  #/templates/<id>  #/templates/<id>/edit
 import { mount, unmount, type Component } from "svelte";
