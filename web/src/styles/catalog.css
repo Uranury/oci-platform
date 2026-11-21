@@ -79,6 +79,17 @@ body :focus-visible {
   color: inherit;
 }
 
+/* iOS Safari zooms the page in when a text control under 16px takes focus.
+   On touch screens, text entry is at least 16px; desktop keeps the 14px body
+   size. Zero specificity, like the reset above (and after it, so it wins
+   there): controls that set their own figure, like the 46px stepper and
+   target wells, keep it. */
+@media (pointer: coarse) {
+  :where(body) :where(input:not([type="checkbox"], [type="radio"]), textarea, select) {
+    font-size: max(16px, 1em);
+  }
+}
+
 :where(body) :where(a) {
   color: inherit;
   text-underline-offset: 3px;
