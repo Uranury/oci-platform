@@ -2,12 +2,21 @@ package handler
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
 	"strings"
 
 	"github.com/Uranury/oci-platform/internal/auth"
 	"github.com/gin-gonic/gin"
 )
+
+// Go's table has no entry for the PWA manifest; without one it would be
+// sniffed and served as text/plain.
+func init() {
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		panic(err)
+	}
+}
 
 // NewRouter wires the API routes and serves the frontend (static files from
 // webFS) for every GET path no API route claims.

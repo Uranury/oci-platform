@@ -11,6 +11,7 @@ import "./styles/catalog.css";
 import TemplateEditor from "./templates/TemplateEditor.svelte";
 import TemplateScreen from "./templates/TemplateScreen.svelte";
 import TemplatesScreen from "./templates/TemplatesScreen.svelte";
+import OfflineBar from "./ui/OfflineBar.svelte";
 import WorkoutScreen from "./workout/WorkoutScreen.svelte";
 
 const UUID = "[0-9a-f-]{36}";
@@ -64,3 +65,14 @@ window.addEventListener("beforeunload", (e) => {
 });
 window.addEventListener("hashchange", route);
 route();
+
+// Says so while the device has no connection; sits above every screen.
+mount(OfflineBar, { target: document.body, anchor: target });
+
+// The service worker keeps the app shell offline (public/sw.js). Only in
+// builds: under Vite's dev server it would cache modules mid-edit.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

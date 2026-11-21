@@ -36,13 +36,29 @@ export class ApiError extends Error {
   }
 }
 
+// fetch, with a network failure (offline, server unreachable) turned into an
+// ApiError (status 0) that a screen can show as is, instead of the browser's
+// "Failed to fetch" / "Load failed".
+async function send(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(path, init);
+  } catch {
+    throw new ApiError(
+      0,
+      navigator.onLine
+        ? "Can't reach Overlift right now. Try again in a moment."
+        : "You're offline. Reconnect to load and save your training.",
+    );
+  }
+}
+
 let refreshing: Promise<boolean> | null = null; // parallel 401s refresh once
 
 function refreshTokens(): Promise<boolean> {
   refreshing ??= (async () => {
     const rt = store.refresh;
     if (!rt) return false;
-    const res = await fetch("/auth/refresh", {
+    const res = await send("/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: rt }),
@@ -90,7 +106,7 @@ export async function api<T = unknown>(
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (auth && store.access) headers["Authorization"] = "Bearer " + store.access;
 
-  const res = await fetch(path, {
+  const res = await send(path, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
