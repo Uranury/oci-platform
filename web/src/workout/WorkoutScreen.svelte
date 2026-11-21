@@ -15,7 +15,9 @@
     Workout,
     WorkoutSet,
   } from "../lib/types";
+  import { cueLog, setSound, soundOn, unlock } from "../lib/sound";
   import ExerciseCard from "./ExerciseCard.svelte";
+  import FinishCard from "./FinishCard.svelte";
   import ExercisePicker from "./ExercisePicker.svelte";
   import Button from "../ui/Button.svelte";
   import Field from "../ui/Field.svelte";
@@ -43,6 +45,8 @@
   let naming = $state(false);
   let templateName = $state("");
   let busy = $state(false);
+  let finished = $state<{ message: string } | null>(null); // the finish card is up
+  let sound = $state(soundOn());
 
   let toastSeq = 0;
   function say(text: string, extra: Partial<ToastMsg> = {}) {
@@ -151,10 +155,12 @@
 
   async function logSet(card: Card, body: SetBody) {
     const label = `${code(cards.findIndex((c) => c.exId === card.exId))}${card.sets.length + 1}`;
+    unlock();
     try {
       const s = await api<WorkoutSet>("POST", `/workouts/${id}/sets`, body);
       await reloadWorkout();
       freshSetId = s.id;
+      cueLog();
       say(`Logged ${label} · ${chip(s)}`, {
         action: {
           label: "Undo",
@@ -413,6 +419,7 @@
   // Sets are saved as they're logged, so finishing only stamps the end time;
   // an empty workout is offered for discarding instead.
   async function finish() {
+    unlock(); // before any await: audio may only start from the tap
     await saving;
     if (!workout) return;
     if (!workout.sets.length) {
@@ -421,13 +428,20 @@
     }
     busy = true;
     try {
+      const first = !workout.finished_at;
       const done = await api<Workout>("POST", `/workouts/${id}/finish`);
       const n = workout.sets.length;
-      flash(
+      const message =
         `Workout saved · ${n} set${n === 1 ? "" : "s"}` +
-          (done.finished_at ? " · " + fmtSession(done.performed_at, done.finished_at) : ""),
-      );
-      location.hash = "#/";
+        (done.finished_at ? " · " + fmtSession(done.performed_at, done.finished_at) : "");
+      workout = { ...workout, finished_at: done.finished_at };
+      // The first finish gets its moment; "Done" on a finished one just leaves.
+      if (first && done.finished_at) {
+        finished = { message };
+      } else {
+        flash(message);
+        location.hash = "#/";
+      }
     } catch (e) {
       fail(e);
     } finally {
@@ -593,6 +607,17 @@
           }}>Save as template</Button
         >
       {/if}
+      <label class="toggle">
+        <input
+          type="checkbox"
+          checked={sound}
+          onchange={(e) => {
+            sound = e.currentTarget.checked;
+            setSound(sound);
+          }}
+        />
+        Sounds when logging and finishing
+      </label>
       <div class="apart">
         <Button variant="danger" onclick={() => (confirming = "delete")}>Delete workout</Button>
       </div>
@@ -603,6 +628,20 @@
 
 <TabBar active="workouts" />
 <Toast bind:toast />
+
+{#if finished && workout?.finished_at}
+  <FinishCard
+    {title}
+    started={workout.performed_at}
+    finished={workout.finished_at}
+    route={cards.flatMap((c, i) => (c.sets.length ? [{ code: code(i), name: c.name, sets: c.sets.length }] : []))}
+    sets={workout.sets}
+    ondone={() => {
+      flash(finished!.message);
+      location.hash = "#/";
+    }}
+  />
+{/if}
 
 {#if options}
   <Sheet bind:open={picking} title="Add exercise">
@@ -851,6 +890,19 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 22px;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .toggle input {
+    width: 20px;
+    height: 20px;
+    margin: 0;
   }
   .from {
     margin: 0;
