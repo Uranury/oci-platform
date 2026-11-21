@@ -6,6 +6,7 @@
   import type { Template, TemplateSummary, Workout, WorkoutSummary } from "../lib/types";
   import BiroRing from "../ui/BiroRing.svelte";
   import Button from "../ui/Button.svelte";
+  import Sheet from "../ui/Sheet.svelte";
   import TabBar from "../ui/TabBar.svelte";
   import Toast, { type ToastMsg } from "../ui/Toast.svelte";
 
@@ -21,6 +22,8 @@
   let starting = $state<string | null>(null); // what's being started: a template id or "empty"
   let toast = $state<ToastMsg | null>(null);
   let toastSeq = 0;
+  let deleting = $state<WorkoutSummary | null>(null); // asked before deleting
+  let busy = $state(false);
 
   function say(text: string, error = false) {
     toast = { id: ++toastSeq, text, error };
@@ -83,6 +86,20 @@
   }
 
   const name = (w: { name?: string | null }) => w.name?.trim() || "Workout";
+
+  async function removeWorkout(w: WorkoutSummary) {
+    busy = true;
+    try {
+      await api("DELETE", `/workouts/${w.id}`);
+      workouts = workouts?.filter((x) => x.id !== w.id) ?? null;
+      deleting = null;
+      say(`Deleted “${name(w)}”`);
+    } catch (e) {
+      say(e instanceof Error ? e.message : "Couldn't delete the workout", true);
+    } finally {
+      busy = false;
+    }
+  }
 </script>
 
 <div class="screen">
@@ -196,6 +213,16 @@
                     : ""}
               </span>
             </a>
+            <button
+              type="button"
+              class="del"
+              aria-label="Delete {name(w)}, {fmtDay(w.performed_at)}"
+              onclick={() => (deleting = w)}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3.5 5.5h13M8 5.5V3.5h4v2M5.5 5.5l.8 11h7.4l.8-11M8.5 8.5v5.5M11.5 8.5v5.5" />
+              </svg>
+            </button>
           </li>
         {/each}
       </ol>
@@ -207,6 +234,21 @@
 
 <TabBar active="workouts" />
 <Toast bind:toast />
+
+<Sheet bind:open={() => deleting !== null, (v) => !v && (deleting = null)} title="Delete workout?">
+  {#if deleting}
+    {@const n = deleting.set_count}
+    <p class="ask">
+      This deletes “{name(deleting)}” from {fmtDay(deleting.performed_at)}{n
+        ? ` and all ${n} of its ${n === 1 ? "set" : "sets"}`
+        : ""}. It can't be undone.
+    </p>
+    <div class="two">
+      <Button onclick={() => (deleting = null)}>Keep it</Button>
+      <Button variant="ink" disabled={busy} onclick={() => deleting && removeWorkout(deleting)}>Delete</Button>
+    </div>
+  {/if}
+</Sheet>
 
 <style>
   .screen {
@@ -377,14 +419,20 @@
     padding: 0;
     list-style: none;
   }
+  .history li {
+    display: flex;
+    align-items: stretch;
+    border-top: 1.5px solid var(--ink);
+  }
   .history a {
+    flex: 1;
+    min-width: 0;
     display: grid;
     grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 10px;
     align-items: start;
     min-height: 56px;
     padding: 8px 0;
-    border-top: 1.5px solid var(--ink);
     text-decoration: none;
   }
   .history a:active {
@@ -405,6 +453,42 @@
     font-weight: 700;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+  .del {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    margin-right: -10px;
+    border: 0;
+    border-radius: var(--r);
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .del:active {
+    background: var(--paper-hi);
+    color: var(--ink);
+  }
+  .del svg {
+    width: 20px;
+    height: 20px;
+  }
+  .del path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ask {
+    margin: 0 0 16px;
+    font-weight: 600;
+  }
+  .two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
   .history .row-name {
     font-size: 24px;
