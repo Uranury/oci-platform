@@ -1,10 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#111214"/>
-  <g fill="#e8ff5a">
-    <rect x="9" y="20" width="8" height="24" rx="2"/>
-    <rect x="18" y="14" width="8" height="36" rx="2"/>
-    <rect x="26" y="29" width="12" height="6" rx="1"/>
-    <rect x="38" y="14" width="8" height="36" rx="2"/>
-    <rect x="47" y="20" width="8" height="24" rx="2"/>
-  </g>
+  <style>
+    .plate { fill: #1c1b19; }
+    .groove { fill: none; stroke: #dedad1; }
+    @media (prefers-color-scheme: dark) {
+      .plate { fill: #dedad1; }
+      .groove { stroke: #1c1b19; }
+    }
+  </style>
+  <path class="plate" fill-rule="evenodd" d="M32 1a31 31 0 1 0 0 62a31 31 0 1 0 0-62ZM32 25.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13Z"/>
+  <circle class="groove" cx="32" cy="32" r="26.5" stroke-width="2.5"/>
+  <circle class="groove" cx="32" cy="32" r="12.5" stroke-width="2.5"/>
 </svg>

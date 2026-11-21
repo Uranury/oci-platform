@@ -2,6 +2,7 @@
   import { api, store, type TokenPair } from "../lib/api";
   import Button from "../ui/Button.svelte";
   import Field from "../ui/Field.svelte";
+  import Wordmark from "../ui/Wordmark.svelte";
 
   let mode = $state<"login" | "register">("login");
   let username = $state("");
@@ -35,7 +36,7 @@
 </script>
 
 <main class="auth">
-  <h1>Overlift</h1>
+  <h1><Wordmark /></h1>
   <p class="tag">Your training log</p>
 
   <div class="modes" role="group" aria-label="Log in or sign up">
@@ -82,8 +83,6 @@
     margin: 0;
     padding-bottom: 8px;
     border-bottom: 2px solid var(--red);
-    font: 400 clamp(64px, 22vw, 96px) / 0.9 var(--gothic);
-    text-transform: uppercase;
   }
   .tag {
     margin: 8px 0 28px;
