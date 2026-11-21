@@ -1,0 +1,82 @@
+---
+# Let's Encrypt via certbot's webroot plugin. Not --nginx: that plugin edits
+# the site file, which Ansible owns, and every run would change it back.
+- name: Install certbot
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+
+# certbot runs deploy hooks from this directory after every successful renewal.
+- name: Create the certbot deploy hook directory
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Reload nginx after each renewal
+  ansible.builtin.copy:
+    src: reload-nginx.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+    owner: root
+    group: root
+    mode: "0755"
+
+# The apt package ships certbot.timer (twice a day; renews 30 days before
+# expiry). Make sure it stays on.
+- name: Start the renewal timer and enable it at boot
+  ansible.builtin.systemd_service:
+    name: certbot.timer
+    state: started
+    enabled: true
+  # --check: the unit does not exist until certbot is really installed.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# A certificate already there may be from the other CA (staging vs production)
+# or for other names than tls_domains: then it is replaced.
+- name: Read the issuer and names of the current certificate
+  ansible.builtin.command: >-
+    openssl x509 -noout -issuer -ext subjectAltName
+    -in /etc/letsencrypt/live/{{ tls_cert_name }}/fullchain.pem
+  register: nginx_cert_info
+  changed_when: false
+  check_mode: false
+  when: nginx_cert.stat.exists
+
+- name: Decide whether the certificate must be (re)issued
+  ansible.builtin.set_fact:
+    nginx_cert_replace: >-
+      {{ nginx_cert.stat.exists and (
+           ('(STAGING)' in nginx_cert_info.stdout) != (tls_staging | bool)
+           or (nginx_cert_info.stdout | regex_findall('DNS:([^,\s]+)') | sort) != (tls_domains | sort)) }}
+
+# nginx must serve the challenge directory before Let's Encrypt asks for it.
+- name: Apply pending nginx changes before the challenge
+  ansible.builtin.meta: flush_handlers
+
+# No e-mail: Let's Encrypt stopped sending expiry mails in 2025, and the
+# verify role checks the expiry date instead.
+- name: Request the certificate
+  ansible.builtin.command: >-
+    certbot certonly --webroot --webroot-path {{ tls_webroot }}
+    --cert-name {{ tls_cert_name }} -d {{ tls_domains | join(' -d ') }}
+    --non-interactive --agree-tos --register-unsafely-without-email
+    {{ '--test-cert' if tls_staging | bool else '' }}
+    {{ '--force-renewal' if nginx_cert_replace | bool else '' }}
+    {{ '--break-my-certs' if (nginx_cert_replace | bool) and (tls_staging | bool) else '' }}
+  when: not nginx_cert.stat.exists or nginx_cert_replace | bool
+  register: nginx_certbot
+  changed_when: true
+  notify: reload nginx
+
+# On the run that got the first certificate this adds the HTTPS server; on
+# every other run the site is already in that state and nothing changes.
+- name: Serve HTTPS once the certificate exists
+  ansible.builtin.set_fact:
+    nginx_tls_ready: true
+  when: not ansible_check_mode
+
+- name: Install the site with HTTPS
+  ansible.builtin.include_tasks: site.yml
+  when: not ansible_check_mode

@@ -7,3 +7,4 @@ app_public_ip: 192.168.64.X    # mainapp
 app_private_ip: 192.168.64.X   # mainapp (same address)
 db_private_ip: 192.168.64.Y    # main-db
 apt_online: true               # local main-db has internet
+tls_enabled: false             # no domain points at the Multipass VMs

@@ -1,8 +1,5 @@
 # {{ ansible_managed }}
-server {
-    listen 80;
-    server_name _;   # replace with the domain when TLS is set up
-
+{% macro proxy() %}
     location / {
         proxy_pass http://{{ app_listen_host }}:{{ app_port }};
         proxy_set_header Host $host;
@@ -10,4 +7,62 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+{% endmacro %}
+{% macro acme() %}
+    # Let's Encrypt HTTP-01 challenge (certbot --webroot); never redirected.
+    location /.well-known/acme-challenge/ {
+        root {{ tls_webroot }};
+    }
+{% endmacro %}
+{% macro tls() %}
+    ssl_certificate /etc/letsencrypt/live/{{ tls_cert_name }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ tls_cert_name }}/privkey.pem;
+    # Mozilla "intermediate": TLS 1.2 and 1.3, forward-secret AEAD ciphers only.
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+{% endmacro %}
+{% if nginx_tls_ready | bool %}
+server {
+    listen 80;
+    server_name {{ tls_domains | join(' ') }};
+{{ acme() }}
+    location / {
+        return 301 https://{{ tls_domains[0] }}$request_uri;
+    }
 }
+
+# nginx 1.24 (Ubuntu 24.04): http2 is a listen flag ("http2 on;" is 1.25.1+).
+server {
+    listen 443 ssl http2;
+    server_name {{ tls_domains[0] }};
+{{ tls() }}
+{% if not tls_staging | bool %}
+    add_header Strict-Transport-Security "max-age={{ tls_hsts_max_age }}" always;
+{% endif %}
+
+{{ proxy() -}}
+}
+{% if tls_domains | length > 1 %}
+
+# The other names on the certificate redirect to the canonical one.
+server {
+    listen 443 ssl http2;
+    server_name {{ tls_domains[1:] | join(' ') }};
+{{ tls() }}
+    return 301 https://{{ tls_domains[0] }}$request_uri;
+}
+{% endif %}
+{% else %}
+server {
+    listen 80;
+    server_name {{ tls_domains | join(' ') if tls_enabled | bool else '_' }};
+{% if tls_enabled | bool %}
+{{ acme() }}
+{% endif %}
+{{ proxy() -}}
+}
+{% endif %}

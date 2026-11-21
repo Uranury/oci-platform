@@ -34,3 +34,6 @@ web/dist/*
 # stack.sh writes web/dev-login.html for logged-in screenshots.
 .devtools/
 web/dev-login.html
+
+# ansible-lint cache (collections it installs)
+ansible/.ansible/

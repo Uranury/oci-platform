@@ -4,7 +4,25 @@ deploy_pubkey_file: keys/deploy.pub
 
 firewall_rules:
   - tcp dport 22 accept
-  - tcp dport 80 accept   # add 443 when TLS is set up
+  - tcp dport 80 accept    # ACME challenge + redirect to HTTPS
+  - tcp dport 443 accept
+
+# HTTPS (nginx role): a Let's Encrypt certificate for tls_domains, the first
+# being the canonical name the others redirect to. The DNS records must point
+# at app_public_ip before the first run.
+#   -e tls_staging=true   use Let's Encrypt staging (untrusted certificate,
+#                         no rate limits) for a first try; the next run
+#                         without it replaces it with a real one
+tls_enabled: true
+tls_domains: [overlift.xyz, www.overlift.xyz]
+tls_cert_name: "{{ tls_domains[0] }}"
+tls_staging: false
+tls_webroot: /var/www/letsencrypt
+# Short while HTTPS is new: browsers remember it for this long (seconds).
+# Raise to 31536000 once it has run without trouble.
+tls_hsts_max_age: 300
+# verify fails when the certificate has fewer days left (certbot renews at 30)
+tls_min_days_left: 21
 
 # packages role (SIS #3)
 pg_client_version: 17

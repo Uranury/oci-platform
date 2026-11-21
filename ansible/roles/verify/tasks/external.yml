@@ -1,10 +1,15 @@
 ---
 # Runs on the controller (the laptop): closed-port checks only prove something
 # from outside. Port of local/scripts/smoke.sh.
+# With tls_enabled every request goes to https://<first tls_domains name>, so
+# the certificate chain and name are checked too (not for staging, see site.yml).
 - name: Set the target address
   ansible.builtin.set_fact:
-    verify_ip: "{{ hostvars[groups['app'][0]].ansible_host }}"
-    verify_base: "http://{{ hostvars[groups['app'][0]].ansible_host }}"
+    verify_ip: "{{ verify_app.ansible_host }}"
+    verify_tls: "{{ verify_app.tls_enabled | bool }}"
+    verify_base: >-
+      {{ ('https://' ~ verify_app.tls_domains[0]) if verify_app.tls_enabled | bool
+         else ('http://' ~ verify_app.ansible_host) }}
     verify_email: "smoke-{{ now(utc=true).strftime('%Y%m%d%H%M%S') }}-{{ 100000 | random }}@example.com"
     verify_username: "smoke-{{ 100000 | random }}"
     verify_password: "Smoke-{{ 100000 | random }}-test"
@@ -15,7 +20,7 @@
     port: "{{ item }}"
     state: started
     timeout: 10
-  loop: [22, 80]
+  loop: "{{ [22, 80] + ([443] if verify_tls else []) }}"
 
 - name: "Ports: closed from the internet (nothing answers)"
   ansible.builtin.wait_for:
@@ -24,7 +29,7 @@
     state: stopped
     connect_timeout: 3
     timeout: 15
-  loop: [443, 8080, 5432]
+  loop: "{{ [8080, 5432] + ([] if verify_tls else [443]) }}"
 
 # The server must offer publickey and nothing else.
 - name: "SSH: password login is refused"
@@ -48,6 +53,47 @@
     'test -w {{ app_dir }}/releases && ! sudo -n true 2>/dev/null'
   changed_when: false
   when: verify_deploy_key.stat.exists
+
+- name: "HTTPS: plain HTTP redirects to the canonical HTTPS name"
+  ansible.builtin.uri:
+    url: http://{{ item }}/healthz?probe=1
+    follow_redirects: none
+    status_code: 301
+  register: verify_http_redirect
+  failed_when: >-
+    verify_http_redirect.status != 301
+    or verify_http_redirect.location != verify_base ~ '/healthz?probe=1'
+  loop: "{{ verify_app.tls_domains }}"
+  when: verify_tls
+
+- name: "HTTPS: the other names redirect to the canonical one"
+  ansible.builtin.uri:
+    url: https://{{ item }}/healthz
+    follow_redirects: none
+    status_code: 301
+  register: verify_https_redirect
+  failed_when: >-
+    verify_https_redirect.status != 301
+    or verify_https_redirect.location != verify_base ~ '/healthz'
+  loop: "{{ verify_app.tls_domains[1:] }}"
+  when: verify_tls
+
+# Renewals need the challenge path served over HTTP, not redirected.
+- name: "HTTPS: the ACME challenge path is not redirected"
+  ansible.builtin.uri:
+    url: http://{{ verify_app.tls_domains[0] }}/.well-known/acme-challenge/verify-probe
+    follow_redirects: none
+    status_code: 404
+  when: verify_tls
+
+- name: "HTTPS: HSTS header"
+  ansible.builtin.uri:
+    url: "{{ verify_base }}/healthz"
+  register: verify_hsts
+  failed_when: >-
+    verify_hsts.strict_transport_security | default('')
+    != 'max-age=' ~ verify_app.tls_hsts_max_age
+  when: verify_tls and not verify_app.tls_staging | bool
 
 - name: "API: GET /healthz through nginx"
   ansible.builtin.uri:

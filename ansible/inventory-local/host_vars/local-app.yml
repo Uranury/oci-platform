@@ -20,3 +20,6 @@ ansible_become_exe: /usr/bin/sudo.ws
 
 # hurl: the upstream tarball needs libxml2.so.2, absent on Ubuntu 26.04.
 hurl_from_archive: true
+
+# No public domain points at the lab VM: plain HTTP, no certificate.
+tls_enabled: false
