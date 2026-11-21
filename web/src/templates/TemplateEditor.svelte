@@ -237,20 +237,30 @@
                 </div>
                 {#each TARGETS[it.type] as k (k)}
                   {@const inp = TARGET_INPUT[k]}
-                  <label class="well" class:bad={!!err[k]}>
-                    <span class="cap">{inp.label} · optional</span>
+                  {@const blank = it[k].every((v) => !v.trim())}
+                  <div class="well" class:bad={!!err[k]} role="group" aria-labelledby="cap-{it.key}-{k}">
+                    <span class="cap" id="cap-{it.key}-{k}">{inp.label} · optional</span>
                     <span class="box">
-                      <input
-                        bind:value={it[k]}
-                        inputmode={inp.inputmode}
-                        placeholder={inp.placeholder}
-                        autocomplete="off"
-                        aria-invalid={!!err[k]}
-                        aria-describedby={err[k] ? `err-${it.key}-${k}` : undefined}
-                      />
+                      {#each inp.parts as part, j (j)}
+                        {#if j > 0}
+                          <span class="sep" class:faint={!it[k][j]?.trim()} aria-hidden="true">{inp.sep}</span>
+                        {/if}
+                        <!-- The example ("8 – 12") shows only while the target is empty:
+                             next to a typed 5, a grey 12 would read as 5–12. -->
+                        <input
+                          bind:value={it[k][j]}
+                          inputmode={inp.inputmode}
+                          placeholder={blank ? part.placeholder : ""}
+                          maxlength={part.maxlength}
+                          aria-label={part.label}
+                          autocomplete="off"
+                          aria-invalid={!!err[k]}
+                          aria-describedby={err[k] ? `err-${it.key}-${k}` : undefined}
+                        />
+                      {/each}
                       {#if inp.unit}<span class="unit">{inp.unit}</span>{/if}
                     </span>
-                  </label>
+                  </div>
                 {/each}
               </div>
               {#each Object.entries(err) as [k, msg] (k)}
@@ -509,6 +519,7 @@
     outline-offset: 2px;
   }
   .box input {
+    flex: 1 1 0;
     width: 100%;
     min-width: 0;
     padding: 0;
@@ -522,6 +533,14 @@
     outline: none;
   }
   .box input::placeholder {
+    color: var(--ink-2);
+  }
+  /* The printed "–" or ":" between two boxes, in the figure's face. */
+  .sep {
+    flex: none;
+    font: 400 46px/62px var(--gothic);
+  }
+  .sep.faint {
     color: var(--ink-2);
   }
   .unit {
