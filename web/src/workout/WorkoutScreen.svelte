@@ -505,6 +505,9 @@
       </span>
       <b>{doneSets}{plannedSets > doneSets ? ` / ${plannedSets}` : ""} {plannedSets === 1 || (!plannedSets && doneSets === 1) ? "set" : "sets"}</b>
     </p>
+    {#if workout.finished_at && !finished}
+      <p class="editing"><b>Finished · editing</b> Changes save as you make them.</p>
+    {/if}
 
     {#if cards.length}
       <ol class="cards" bind:this={listEl} class:dragging={drag} class:settling>
@@ -764,6 +767,23 @@
   .meta b {
     flex: none;
     color: var(--ink);
+  }
+  /* A finished workout reopened: say so, and that there's nothing to save. */
+  .editing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    margin: -4px 0 16px;
+    padding: 8px 12px;
+    border: var(--line);
+    border-radius: var(--r);
+    color: var(--ink-2);
+    font-size: 13px;
+  }
+  .editing b {
+    color: var(--ink);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .cards {
     position: relative;
