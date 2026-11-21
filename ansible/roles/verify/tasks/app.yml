@@ -78,6 +78,24 @@
   ansible.builtin.command: nginx -t
   changed_when: false
 
+- name: "HTTPS: the certificate does not expire within tls_min_days_left days"
+  ansible.builtin.command: >-
+    openssl x509 -noout -checkend {{ tls_min_days_left | int * 86400 }}
+    -in /etc/letsencrypt/live/{{ tls_cert_name }}/fullchain.pem
+  changed_when: false
+  when: tls_enabled | bool
+
+- name: "HTTPS: the renewal timer is enabled and running"
+  ansible.builtin.command: systemctl {{ item }} certbot.timer  # noqa: command-instead-of-module
+  changed_when: false
+  loop: [is-enabled, is-active]
+  when: tls_enabled | bool
+
+- name: "HTTPS: renewals reload nginx"
+  ansible.builtin.command: test -x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+  changed_when: false
+  when: tls_enabled | bool
+
 - name: "API: /healthz answers on loopback"
   ansible.builtin.uri:
     url: http://{{ app_listen_host }}:{{ app_port }}/healthz

@@ -36,7 +36,7 @@ commands such as `ansible all -m ping` see the same variables as the playbook.
 | `packages` | app | `setup-packages.sh` (jq/netcat, PGDG client 17, hurl 8.0.1 by checksum) |
 | `postgresql` | db | SIS #1 report 3.5 (manual) |
 | `backup` | db | `setup-fs.sh db` |
-| `nginx` | app | manual install + site from `setup-fs.sh app` (`nginx -t` before reload) |
+| `nginx` | app | manual install + site from `setup-fs.sh app` (`nginx -t` before reload); HTTPS with a Let's Encrypt certificate (certbot) |
 | `app` | app | `setup-fs.sh app` + `enable-service.sh` |
 | `deploy_release` | app | `local/scripts/push-release.sh` + `activate-release.sh` (+ keep last 5) |
 | `acl` | all | `setup-perms.sh` (runs last in each play) |
@@ -48,6 +48,10 @@ commands such as `ansible all -m ping` see the same variables as the playbook.
 - Ansible (ansible-core 2.16+) and the collections:
   `ansible-galaxy collection install -r requirements.yml`
 - Go (the playbook builds the linux/arm64 binary itself), git
+- A CA bundle for Ansible's Python: the smoke tests call the site over HTTPS
+  and check its certificate. A python.org Python on macOS ships none
+  (`CERTIFICATE_VERIFY_FAILED` even for google.com): run its
+  `Install Certificates.command`, or `export SSL_CERT_FILE=/etc/ssl/cert.pem`
 - The private keys referenced in `inventory/hosts.yml`:
   `~/.ssh/mainapp_keys` (mainapp), `~/.ssh/maindbprivate.key` (main-db),
   optionally `~/.ssh/tsis1-deploy` (only for the bot login check)
@@ -64,6 +68,9 @@ commands such as `ansible all -m ping` see the same variables as the playbook.
 | `group_vars/all/vars.yml` | `app_private_ip`, `db_private_ip` | private IPs (firewall, pg_hba, DATABASE_URL) |
 | `group_vars/all/vars.yml` | `remove_bootstrap_user` | `true` (default) removes `ubuntu` as in SIS #3; `false` keeps it as break-glass |
 | `group_vars/all/vault.yml` | `vault_db_password`, `vault_jwt_secret` | `ansible-vault edit inventory/group_vars/all/vault.yml` |
+| `group_vars/app.yml` | `tls_domains` | names on the certificate; the first is canonical, the rest redirect to it. Their DNS A records must point at `app_public_ip` |
+| `group_vars/app.yml` | `tls_hsts_max_age` | HSTS lifetime, 300 s while HTTPS is new; raise to 31536000 once it is proven |
+| `-e` | `tls_staging=true` | get an untrusted certificate from Let's Encrypt staging (no rate limits) to try the setup; the next run without it swaps in a real one |
 | `-e` | `bootstrap_user=ubuntu` | first run only: log in as the cloud image user |
 | `-e` | `apt_online=true` | while main-db has its temporary public IP |
 | `-e` | `deploy_release_binary=/path/tsis1linux` | deploy a prebuilt binary (e.g. the CI artifact) instead of building |
@@ -78,7 +85,9 @@ commands such as `ansible all -m ping` see the same variables as the playbook.
 2. Put the new IPs in `inventory/hosts.yml` (and `group_vars/all/vars.yml` if
    the private IPs changed). If an IP was used before, drop its old host key:
    `ssh-keygen -R <ip>`.
-3. First run, as `ubuntu`, with internet on main-db:
+3. Make sure the DNS records for `tls_domains` point at the app VM's public IP
+   (`dig +short overlift.xyz`): the certificate is requested on the first run.
+4. First run, as `ubuntu`, with internet on main-db:
 
    ```
    cd ansible
@@ -89,15 +98,15 @@ commands such as `ansible all -m ping` see the same variables as the playbook.
    On the way the playbook creates `alibi`, checks that `alibi` can log in,
    hardens sshd, applies the firewall, installs everything, deploys the
    current commit, then logs in as `alibi` and deletes the `ubuntu` account.
-4. Remove the temporary public IP from main-db in the OCI console.
-5. Every later run (as `alibi`) must change nothing:
+5. Remove the temporary public IP from main-db in the OCI console.
+6. Every later run (as `alibi`) must change nothing:
 
    ```
    scripts/check-idempotence.sh --ask-vault-pass
    ```
 
-   Run it from the same commit as step 3: a new commit is a new release.
-6. Reboot test: reboot both VMs, then run only the tests:
+   Run it from the same commit as step 4: a new commit is a new release.
+7. Reboot test: reboot both VMs, then run only the tests:
 
    ```
    ansible-playbook site.yml --ask-vault-pass --tags verify
@@ -113,6 +122,22 @@ ansible-playbook site.yml --syntax-check && ansible-lint site.yml
 ```
 
 ## Design notes
+
+- **HTTPS.** certbot `certonly --webroot`, not `--nginx`: the nginx plugin
+  edits the site file Ansible owns, so the idempotence check would fail. The
+  site template only adds the 443 servers once
+  `/etc/letsencrypt/live/<first domain>/` exists: on the first run nginx serves
+  the HTTP-01 challenge from `tls_webroot` over port 80, certbot gets the
+  certificate, and the same run rewrites the site with HTTPS. Port 80 then
+  redirects everything to `https://<first domain>` except
+  `/.well-known/acme-challenge/`, which renewals need. Renewal is certbot's own
+  `certbot.timer` (renews 30 days before expiry); a deploy hook reloads nginx.
+  A certificate from the other CA (staging vs production) or for other names
+  than `tls_domains` is replaced automatically. `verify` checks the expiry
+  date, the timer, the redirects, the challenge path and the HSTS header, and
+  sends every API check over HTTPS with certificate validation. No contact
+  e-mail is registered: Let's Encrypt no longer sends expiry mails.
+  The lab inventories set `tls_enabled: false` (no domain points at them).
 
 - **Bootstrap user.** `ansible_user` is `{{ connect_user }}`, which is
   `bootstrap_user` if given, otherwise `alibi`. Tasks that must prove the admin

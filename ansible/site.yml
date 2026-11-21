@@ -66,6 +66,12 @@
   connection: local
   gather_facts: false
   become: false
+  vars:
+    verify_app: "{{ hostvars[groups['app'][0]] }}"
+  # A staging certificate is not trusted, so its chain cannot be checked.
+  module_defaults:
+    ansible.builtin.uri:
+      validate_certs: "{{ not verify_app.tls_staging | bool }}"
   tasks:
     - name: Run the external checks
       ansible.builtin.import_role:
