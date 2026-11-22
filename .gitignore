@@ -1,10 +1,9 @@
-SIS1-context.md
 CLAUDE.md
-PLAN.md
 PRODUCT.md
 DESIGN.md
 .idea/
-.reports/
+reports/
+.roadmap/
 *.exe
 .env
 *.docx
