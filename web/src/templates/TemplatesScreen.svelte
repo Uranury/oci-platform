@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SideMenu from "../ui/SideMenu.svelte";
   import { onMount } from "svelte";
   import { api } from "../lib/api";
   import { takeFlash } from "../lib/flash";
@@ -62,7 +63,7 @@
 
 <div class="screen">
   <header class="top">
-    <span class="brand">Overlift</span>
+    <SideMenu />
     {#if templates?.length}
       <Button size="sm" href="#/templates/new">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" /></svg>
@@ -155,11 +156,6 @@
     justify-content: space-between;
     min-height: 56px;
     padding-top: max(8px, env(safe-area-inset-top));
-  }
-  .brand {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
   .top path {
     fill: none;
