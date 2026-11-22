@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SideMenu from "../ui/SideMenu.svelte";
   import { onMount } from "svelte";
   import { api, ApiError } from "../lib/api";
   import { exerciseMeta, label, toNewExercise } from "../lib/exercises";
@@ -135,7 +136,7 @@
 
 <div class="screen">
   <header class="top">
-    <span class="brand">Overlift</span>
+    <SideMenu />
     {#if options}
       <Button size="sm" onclick={() => (creating = true)}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" /></svg>
@@ -274,11 +275,6 @@
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
-  }
-  .brand {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
   h1 {
     margin: 2px 0 8px;

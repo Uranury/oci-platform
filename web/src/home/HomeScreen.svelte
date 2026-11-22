@@ -1,6 +1,7 @@
 <script lang="ts">
+  import SideMenu from "../ui/SideMenu.svelte";
   import { onMount } from "svelte";
-  import { api, logout } from "../lib/api";
+  import { api } from "../lib/api";
   import { takeFlash } from "../lib/flash";
   import { fmtClock, fmtDay, fmtDaysAgo, fmtNames, fmtSession } from "../lib/format";
   import type { Template, TemplateSummary, Workout, WorkoutSummary } from "../lib/types";
@@ -105,8 +106,7 @@
 
 <div class="screen">
   <header class="top">
-    <span class="brand">Overlift</span>
-    <button type="button" class="quiet" onclick={logout}>Log out</button>
+    <SideMenu />
   </header>
 
   <h1>Workouts</h1>
@@ -270,20 +270,6 @@
     justify-content: space-between;
     min-height: 56px;
     padding-top: max(8px, env(safe-area-inset-top));
-  }
-  .brand,
-  .quiet {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-  .quiet {
-    min-height: 44px;
-    margin-right: -6px;
-    padding: 0 6px;
-    border: 0;
-    background: none;
-    cursor: pointer;
   }
   h1 {
     margin: 2px 0 8px;
