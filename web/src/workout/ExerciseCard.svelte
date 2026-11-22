@@ -1,12 +1,13 @@
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import { fmtLast, fmtSets, fmtTarget } from "../lib/format";
-  import { FIELDS, chip, prefill, suspicious, toBody, type Values } from "../lib/sets";
+  import { FIELDS, chip, overlifted, prefill, suspicious, toBody, type Values } from "../lib/sets";
   import type { Plan, Previous, SetBody, TrackingType, WorkoutSet } from "../lib/types";
   import BiroRing from "../ui/BiroRing.svelte";
   import BiroTick from "../ui/BiroTick.svelte";
   import Button from "../ui/Button.svelte";
   import Notice from "../ui/Notice.svelte";
+  import OverMark from "../ui/OverMark.svelte";
   import Stepper from "../ui/Stepper.svelte";
 
   type Stop = "done" | "active" | "todo";
@@ -67,6 +68,19 @@
   const nextNo = $derived(done + 1);
   // Dashed placeholders for the planned sets still to come after the next one.
   const later = $derived(Math.max(0, target - nextNo));
+
+  // Today's best set beats last session's: the red coach's note by the name.
+  // It is drawn with the pen only when earned while the screen is open.
+  const over = $derived(overlifted(type, sets, last?.sets));
+  let overFresh = $state(false);
+  let wasOver = untrack(() => over);
+  $effect(() => {
+    if (over && !wasOver) {
+      overFresh = true;
+      setTimeout(() => (overFresh = false), 700); // drawn once, not on every expand
+    }
+    wasOver = over;
+  });
 
   // Fresh values whenever what the form is for changes: another exercise
   // becomes active, a set is logged or deleted, or one is picked to edit.
@@ -132,12 +146,12 @@
     <div class="headrow">
       {#if active}
         <header class="head">
-          <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
+          <h2 id="ex-{code}"><span class="code">{code}</span>{name}{#if over}<OverMark fresh={overFresh} />{/if}</h2>
           {#if plan}<span class="target">{fmtTarget(plan)}</span>{/if}
         </header>
       {:else}
         <button type="button" class="head toggle" onclick={onactivate} aria-expanded="false">
-          <h2 id="ex-{code}"><span class="code">{code}</span>{name}</h2>
+          <h2 id="ex-{code}"><span class="code">{code}</span>{name}{#if over}<OverMark fresh={overFresh} />{/if}</h2>
           <span class="count">{target ? `${done} / ${target}` : `${done} set${done === 1 ? "" : "s"}`}</span>
         </button>
       {/if}

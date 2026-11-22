@@ -8,6 +8,7 @@
   import Button from "../ui/Button.svelte";
   import Sheet from "../ui/Sheet.svelte";
   import TabBar from "../ui/TabBar.svelte";
+  import Tally from "../ui/Tally.svelte";
   import Toast, { type ToastMsg } from "../ui/Toast.svelte";
 
   // How many templates the start sheet lists before linking to the rest.
@@ -110,7 +111,14 @@
 
   <h1>Workouts</h1>
   <p class="meta">
-    <span>{thisWeek} {thisWeek === 1 ? "session" : "sessions"} this week</span>
+    {#if thisWeek}
+      <span class="week">
+        <Tally count={thisWeek} label="{thisWeek} {thisWeek === 1 ? 'session' : 'sessions'}" />
+        this week
+      </span>
+    {:else}
+      <span>No sessions this week</span>
+    {/if}
     <b>{fmtDay(now.toISOString())}</b>
   </p>
 
@@ -296,6 +304,11 @@
   }
   .meta b {
     color: var(--ink);
+  }
+  .week {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .state {
     margin: 24px 0 16px;

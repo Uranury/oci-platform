@@ -1,11 +1,16 @@
-// Short audio cues, synthesized with Web Audio (no files to fetch or cache):
-// a pen tick when a set is logged, a rubber-stamp thump and a two-note
-// chime when a workout is finished. On by default; the choice is kept per
-// device. Phones in silent mode mute them anyway.
+// Short audio cues through Web Audio: a recorded ballpoint stroke when a set
+// is logged, and a synthesized rubber-stamp thump and two-note chime when a
+// workout is finished. On by default; the choice is kept per device. Phones
+// in silent mode mute them anyway.
+
+// Inlined into the bundle as a data URL, so it works offline without the
+// service worker having to know about it.
+import penStroke from "../assets/sounds/pen-stroke.wav?inline";
 
 const KEY = "overlift:sound";
 
 let ctx: AudioContext | null = null;
+let pen: Promise<AudioBuffer | null> | null = null;
 
 export function soundOn(): boolean {
   try {
@@ -31,6 +36,7 @@ export function unlock(): void {
   try {
     ctx ??= new AudioContext();
     if (ctx.state === "suspended") void ctx.resume();
+    pen ??= decode(ctx, penStroke);
   } catch {
     ctx = null; // no Web Audio: cues stay silent
   }
@@ -38,6 +44,13 @@ export function unlock(): void {
 
 function ready(): AudioContext | null {
   return soundOn() && ctx && ctx.state !== "closed" ? ctx : null;
+}
+
+function decode(a: AudioContext, url: string): Promise<AudioBuffer | null> {
+  return fetch(url)
+    .then((r) => r.arrayBuffer())
+    .then((b) => a.decodeAudioData(b))
+    .catch(() => null); // undecodable: the cue stays silent
 }
 
 // A burst of filtered noise: the scratch of a pen, the slap of a stamp.
@@ -72,13 +85,20 @@ function tone(a: AudioContext, at: number, type: OscillatorType, from: number, t
   osc.stop(at + dur + 0.02);
 }
 
-// A set logged: a quick ballpoint tick.
+// A set logged: the pen stroke, the same one every time. Usually decoded long
+// before the first set is saved; if not, it plays as soon as it is.
 export function cueLog(): void {
   const a = ready();
-  if (!a) return;
-  const t = a.currentTime + 0.01;
-  noise(a, t, 0.035, "bandpass", 3200, 0.22);
-  tone(a, t + 0.03, "sine", 1900, 1500, 0.05, 0.05);
+  if (!a || !pen) return;
+  void pen.then((buf) => {
+    if (!buf || !ready()) return;
+    const src = a.createBufferSource();
+    src.buffer = buf;
+    const gain = a.createGain();
+    gain.gain.value = 0.8;
+    src.connect(gain).connect(a.destination);
+    src.start();
+  });
 }
 
 // The workout finished: the stamp lands `delayMs` from now, then a rising

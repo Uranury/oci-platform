@@ -122,3 +122,33 @@ export function chip(s: Pick<WorkoutSet, Measure | "exercise_tracking_type">): s
       return s.distance_m != null ? `${fmtWeight(s.distance_m)} m` : "?";
   }
 }
+
+// What makes one set better than another, per tracking type, most important
+// first: weight then reps for lifts, added weight then reps for bodyweight,
+// time or distance then weight for the rest.
+const RANK: Record<TrackingType, Measure[]> = {
+  weight_reps: ["weight_kg", "reps"],
+  bodyweight_reps: ["weight_kg", "reps"],
+  duration: ["duration_seconds", "weight_kg"],
+  distance: ["distance_m", "weight_kg"],
+};
+
+function compare(type: TrackingType, a: WorkoutSet, b: WorkoutSet): number {
+  for (const key of RANK[type]) {
+    const d = (a[key] ?? 0) - (b[key] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+function best(type: TrackingType, sets: WorkoutSet[]): WorkoutSet | null {
+  return sets.reduce<WorkoutSet | null>((top, s) => (!top || compare(type, s, top) > 0 ? s : top), null);
+}
+
+// Whether today's best set beats last session's best: heavier, or more reps
+// at the same weight, or longer / further. The "overlift" the app is named for.
+export function overlifted(type: TrackingType, today: WorkoutSet[], last: WorkoutSet[] | undefined): boolean {
+  const a = best(type, today);
+  const b = best(type, last ?? []);
+  return !!a && !!b && compare(type, a, b) > 0;
+}

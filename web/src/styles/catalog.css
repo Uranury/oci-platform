@@ -38,7 +38,7 @@ body {
   --paper: #dedad1;
   --paper-hi: #e8e5de; /* raised panels: same paper, less grey */
   --ink: #1c1b19;
-  --ink-2: #45423b; /* secondary text, 7.6:1 on paper */
+  --ink-2: #3a3732; /* secondary text, 8.5:1 on paper */
   --rule: #1c1b1966;
   --red: #c2372b; /* the route, and nothing else */
   --biro: #24399a; /* hand marks and focus */
