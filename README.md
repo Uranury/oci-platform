@@ -99,6 +99,10 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push and PR to `m
 
 See `CLAUDE.md` for the package-by-package breakdown and the conventions the codebase follows (repo/service/handler layering, transaction usage, auth design, etc.).
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
 MIT, see [`LICENSE`](LICENSE). The self-hosted fonts in `web/src/assets/fonts/` (League Gothic, Spline Sans Mono) are under the SIL Open Font License 1.1, see [`OFL.txt`](web/src/assets/fonts/OFL.txt).
