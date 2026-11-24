@@ -25,6 +25,9 @@ type WorkoutSet interface {
 	// ListHistory returns the user's most recent workouts (newest first, at
 	// most maxWorkouts) that include the exercise, each with its sets of it.
 	ListHistory(ctx context.Context, userID, exerciseID uuid.UUID, maxWorkouts int) ([]models.PreviousSession, error)
+	// ListExport is every set the user logged in workouts performed in
+	// [from, to), oldest workout first, for the CSV export.
+	ListExport(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]models.ExportSet, error)
 }
 
 type workoutSet struct {
@@ -139,6 +142,18 @@ func (r *workoutSet) ListPrevious(ctx context.Context, userID, excludeWorkoutID 
 		}
 		last := &out[len(out)-1]
 		last.Sets = append(last.Sets, set)
+	}
+	return out, nil
+}
+
+func (r *workoutSet) ListExport(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]models.ExportSet, error) {
+	rows, err := r.q.ListExportSets(ctx, dbgen.ListExportSetsParams{UserID: userID, FromAt: from, ToAt: to})
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]models.ExportSet, len(rows))
+	for i, row := range rows {
+		out[i] = models.ExportSet(row)
 	}
 	return out, nil
 }

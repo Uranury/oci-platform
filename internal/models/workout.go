@@ -214,3 +214,19 @@ type PreviousSession struct {
 	PerformedAt time.Time    `json:"performed_at"`
 	Sets        []WorkoutSet `json:"sets"`
 }
+
+// ExportSet is one row of the history export: a set with its workout and
+// exercise spelled out, numbered within its exercise in that workout.
+type ExportSet struct {
+	WorkoutID            uuid.UUID
+	PerformedAt          time.Time
+	WorkoutName          *string
+	WorkoutNotes         *string
+	ExerciseName         string
+	ExerciseTrackingType TrackingType
+	SetNumber            int
+	Reps                 *int
+	WeightKg             *float64
+	DurationSeconds      *int
+	DistanceM            *float64
+}

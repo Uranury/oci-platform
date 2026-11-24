@@ -36,6 +36,19 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /* iOS Safari draws date and time inputs as a native control that ignores
+     width: 100% (wider than the box in some locales, e.g. "24 нояб. 2026 г.")
+     and centres the value. Dropping the native appearance makes them size
+     like any input; tapping still opens the system picker. */
+  .field :global(input:is([type="date"], [type="datetime-local"], [type="time"])) {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    text-align: left;
+  }
+  .field :global(input::-webkit-date-and-time-value) {
+    text-align: left;
+  }
   .field :global(textarea) {
     resize: vertical;
   }

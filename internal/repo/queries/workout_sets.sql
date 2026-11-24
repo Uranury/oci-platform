@@ -72,3 +72,19 @@ FROM recent r
 JOIN workout_sets s ON s.workout_id = r.id AND s.exercise_id = @exercise_id
 JOIN exercises e ON e.id = s.exercise_id
 ORDER BY r.performed_at DESC, r.id, s.created_at;
+
+-- name: ListExportSets :many
+-- Every set the user logged in workouts performed in [@from_at, @to_at), for
+-- the CSV export: workouts oldest first, each in its own exercise order,
+-- sets in logged order and numbered per exercise. Archived exercises keep
+-- their names here as in the history.
+SELECT w.id AS workout_id, w.performed_at, w.name AS workout_name, w.notes AS workout_notes,
+    e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    (row_number() OVER (PARTITION BY s.workout_id, s.exercise_id ORDER BY s.created_at, s.id))::int AS set_number,
+    s.reps, s.weight_kg, s.duration_seconds, s.distance_m
+FROM workout_sets s
+JOIN workouts w ON w.id = s.workout_id
+JOIN exercises e ON e.id = s.exercise_id
+LEFT JOIN workout_exercises we ON we.workout_id = s.workout_id AND we.exercise_id = s.exercise_id
+WHERE w.user_id = @user_id AND w.performed_at >= @from_at AND w.performed_at < @to_at
+ORDER BY w.performed_at, w.id, we.position, we.id, s.created_at, s.id;

@@ -13,6 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	// The export's tz parameter needs the zone database; the distroless
+	// image has none, so it ships inside the binary (~450 KB).
+	_ "time/tzdata"
+
 	"github.com/Uranury/oci-platform/internal/auth"
 	"github.com/Uranury/oci-platform/internal/config"
 	"github.com/Uranury/oci-platform/internal/db"
