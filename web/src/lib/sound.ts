@@ -46,10 +46,15 @@ function ready(): AudioContext | null {
   return soundOn() && ctx && ctx.state !== "closed" ? ctx : null;
 }
 
-function decode(a: AudioContext, url: string): Promise<AudioBuffer | null> {
-  return fetch(url)
-    .then((r) => r.arrayBuffer())
-    .then((b) => a.decodeAudioData(b))
+// The data URL is unpacked here rather than fetched, so the CSP's
+// connect-src can stay 'self' (no data:).
+function decode(a: AudioContext, dataURL: string): Promise<AudioBuffer | null> {
+  return Promise.resolve()
+    .then(() => {
+      const bin = atob(dataURL.slice(dataURL.indexOf(",") + 1));
+      const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+      return a.decodeAudioData(bytes.buffer);
+    })
     .catch(() => null); // undecodable: the cue stays silent
 }
 
