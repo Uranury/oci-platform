@@ -3,6 +3,7 @@ package handler_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -50,6 +51,31 @@ func TestFrontendFiles(t *testing.T) {
 		}
 		if got := rec.Header().Get("Content-Type"); tt.ctype != "" && got != tt.ctype {
 			t.Errorf("%s %s: Content-Type %q, want %q", tt.method, tt.path, got, tt.ctype)
+		}
+	}
+}
+
+// TestSecurityHeaders: every response, the page, a static file, an error and
+// an API answer, carries the CSP and nosniff.
+func TestSecurityHeaders(t *testing.T) {
+	t.Parallel()
+	web := fstest.MapFS{"index.html": {Data: []byte("<html>")}}
+	h := handler.NewRouter(nil, nil, nil, nil, auth.NewJWTIssuer("test-secret-test-secret-test-secret", time.Minute), web)
+
+	for _, path := range []string{"/", "/missing.js", "/healthz", "/workouts"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		csp := rec.Header().Get("Content-Security-Policy")
+		for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'"} {
+			if !strings.Contains(csp, want) {
+				t.Errorf("GET %s: CSP %q lacks %q", path, csp, want)
+			}
+		}
+		if strings.Contains(csp, "unsafe-") {
+			t.Errorf("GET %s: CSP %q allows unsafe-*", path, csp)
+		}
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("GET %s: X-Content-Type-Options %q, want nosniff", path, got)
 		}
 	}
 }
