@@ -179,6 +179,75 @@ func (q *Queries) ListExerciseHistory(ctx context.Context, arg ListExerciseHisto
 	return items, nil
 }
 
+const listExportSets = `-- name: ListExportSets :many
+SELECT w.id AS workout_id, w.performed_at, w.name AS workout_name, w.notes AS workout_notes,
+    e.name AS exercise_name, e.tracking_type AS exercise_tracking_type,
+    (row_number() OVER (PARTITION BY s.workout_id, s.exercise_id ORDER BY s.created_at, s.id))::int AS set_number,
+    s.reps, s.weight_kg, s.duration_seconds, s.distance_m
+FROM workout_sets s
+JOIN workouts w ON w.id = s.workout_id
+JOIN exercises e ON e.id = s.exercise_id
+LEFT JOIN workout_exercises we ON we.workout_id = s.workout_id AND we.exercise_id = s.exercise_id
+WHERE w.user_id = $1 AND w.performed_at >= $2 AND w.performed_at < $3
+ORDER BY w.performed_at, w.id, we.position, we.id, s.created_at, s.id
+`
+
+type ListExportSetsParams struct {
+	UserID uuid.UUID
+	FromAt time.Time
+	ToAt   time.Time
+}
+
+type ListExportSetsRow struct {
+	WorkoutID            uuid.UUID
+	PerformedAt          time.Time
+	WorkoutName          *string
+	WorkoutNotes         *string
+	ExerciseName         string
+	ExerciseTrackingType models.TrackingType
+	SetNumber            int
+	Reps                 *int
+	WeightKg             *float64
+	DurationSeconds      *int
+	DistanceM            *float64
+}
+
+// Every set the user logged in workouts performed in [@from_at, @to_at), for
+// the CSV export: workouts oldest first, each in its own exercise order,
+// sets in logged order and numbered per exercise. Archived exercises keep
+// their names here as in the history.
+func (q *Queries) ListExportSets(ctx context.Context, arg ListExportSetsParams) ([]ListExportSetsRow, error) {
+	rows, err := q.db.Query(ctx, listExportSets, arg.UserID, arg.FromAt, arg.ToAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExportSetsRow{}
+	for rows.Next() {
+		var i ListExportSetsRow
+		if err := rows.Scan(
+			&i.WorkoutID,
+			&i.PerformedAt,
+			&i.WorkoutName,
+			&i.WorkoutNotes,
+			&i.ExerciseName,
+			&i.ExerciseTrackingType,
+			&i.SetNumber,
+			&i.Reps,
+			&i.WeightKg,
+			&i.DurationSeconds,
+			&i.DistanceM,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPreviousSets = `-- name: ListPreviousSets :many
 WITH latest AS (
     SELECT DISTINCT ON (s.exercise_id) s.exercise_id, w.id AS workout_id

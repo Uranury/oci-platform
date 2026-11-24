@@ -47,6 +47,7 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	api.POST("/exercises/:id/duplicate", exerciseH.Duplicate)
 
 	api.GET("/workouts", workoutH.ListWorkouts)
+	api.GET("/workouts/export", workoutH.ExportWorkouts)
 	api.POST("/workouts", workoutH.CreateWorkout)
 	api.GET("/workouts/:id", workoutH.GetWorkout)
 	api.PUT("/workouts/:id", workoutH.UpdateWorkout)

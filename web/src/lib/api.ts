@@ -92,16 +92,10 @@ interface Opts {
   retry?: boolean;
 }
 
-// Sends a JSON request; resolves to the parsed body (null for 204) or throws
-// ApiError with the server's error message. A 401 is retried once after a
-// token refresh; if that fails the session is cleared and the login route
-// shown.
-export async function api<T = unknown>(
-  method: string,
-  path: string,
-  body?: unknown,
-  { auth = true, retry = true }: Opts = {},
-): Promise<T> {
+// Sends a request with the access token; a 401 is retried once after a
+// token refresh, and if that fails the session is cleared and the login
+// route shown.
+async function authed(method: string, path: string, body: unknown, { auth = true, retry = true }: Opts): Promise<Response> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (auth && store.access) headers["Authorization"] = "Bearer " + store.access;
@@ -113,14 +107,34 @@ export async function api<T = unknown>(
   });
 
   if (res.status === 401 && auth && retry) {
-    if (await refreshTokens()) return api<T>(method, path, body, { auth, retry: false });
+    if (await refreshTokens()) return authed(method, path, body, { auth, retry: false });
     store.clear();
     location.hash = "#/login";
     throw new ApiError(401, "Session expired, please log in again");
   }
-  if (res.status === 204) return null as T;
+  return res;
+}
 
+async function failure(res: Response): Promise<ApiError> {
   const data = (await res.json().catch(() => null)) as { error?: string } | null;
-  if (!res.ok) throw new ApiError(res.status, data?.error || res.statusText);
-  return data as T;
+  return new ApiError(res.status, data?.error || res.statusText);
+}
+
+// Sends a JSON request; resolves to the parsed body (null for 204) or throws
+// ApiError with the server's error message.
+export async function api<T = unknown>(method: string, path: string, body?: unknown, opts: Opts = {}): Promise<T> {
+  const res = await authed(method, path, body, opts);
+  if (res.status === 204) return null as T;
+  if (!res.ok) throw await failure(res);
+  return (await res.json().catch(() => null)) as T;
+}
+
+// Fetches a file the API sends as an attachment (the CSV export), with the
+// name from its Content-Disposition. A plain link can't carry the bearer
+// token, hence the fetch.
+export async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await authed("GET", path, undefined, {});
+  if (!res.ok) throw await failure(res);
+  const named = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
+  return { blob: await res.blob(), filename: named?.[1] ?? "overlift.csv" };
 }

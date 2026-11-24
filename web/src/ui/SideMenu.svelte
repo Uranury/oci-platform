@@ -3,6 +3,7 @@
   import { api, ApiError, logout } from "../lib/api";
   import { setSound, soundOn } from "../lib/sound";
   import Button from "./Button.svelte";
+  import ExportHistory from "./ExportHistory.svelte";
   import Notice from "./Notice.svelte";
 
   // The Overlift name in a screen's header, which opens the side menu: a
@@ -92,6 +93,11 @@
         />
         Sounds when logging and finishing
       </label>
+    </section>
+
+    <section aria-labelledby="menu-data">
+      <h3 id="menu-data" class="cap">Your data</h3>
+      <ExportHistory />
     </section>
 
     <section aria-labelledby="menu-account" bind:this={account}>
