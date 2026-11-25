@@ -1,8 +1,9 @@
 <script lang="ts">
   // The Overlift wordmark for the login screen: the O is a weight plate turned
   // slightly away (its edge shows on the left), with a chain running from its
-  // hole under and over the word. Static art; the word is live text in League
-  // Gothic (loaded by catalog.css).
+  // hole under and over the word. All of it is vector art: "VERLIFT" is League
+  // Gothic converted to outlines (394.6px, 7.9 letter-spacing), so the mark
+  // doesn't depend on the font loading and looks the same everywhere.
 </script>
 <svg class="wordmark" viewBox="114 103.5 1182.2 584" role="img" aria-label="Overlift">
   <ellipse cx="230.9" cy="356" rx="110.9" ry="168" fill="#1c1b19"/>
@@ -15,7 +16,7 @@
   </clipPath>
   <ellipse cx="252.9" cy="354" rx="22.2" ry="33.6" fill="#1c1b19" stroke="#dedad1" stroke-width="3"/>
   <ellipse cx="245.9" cy="355" rx="22.2" ry="33.6" fill="#dedad1" clip-path="url(#overlift-hole)"/>
-  <text x="381.8" y="500" font-size="394.6" letter-spacing="7.9" fill="#1c1b19">VERLIFT</text>
+  <path fill="#1c1b19" d="M431.9 500 387.7 210H429.2L450.5 381.2L452 409.2H454.4L456 381.2L477.3 210H518.7L474.5 500ZM548.3 500V210H645.8V253.8H590.9V331.9H630.4V374.5H590.9V456.2H645.8V500ZM685.3 500V210H727.9Q766.2 210 784.3 231.2Q802.5 252.4 802.5 293.6Q802.5 318.1 793.9 335.9Q785.3 353.8 773.1 362.1L802.1 500H759.4L735.4 377.7H727.9V500ZM727.9 338.2Q739.7 338.2 746.6 333Q753.5 327.8 756.5 318.1Q759.4 308.4 759.4 295.2Q759.4 274.5 752.6 263.3Q745.8 252.2 727.9 252.2ZM834 500V210H876.7V460.5H933.1V500ZM958.3 500V210H1001V500ZM1040.4 500V210H1141.8V253.8H1083V329.9H1122.5V373.7H1083V500ZM1195.5 500V253.8H1155.3V210H1278.4V253.8H1238.1V500Z"/>
   <g fill="#dedad1" stroke="#1c1b19" stroke-width="4.8">
     <g transform="translate(277.5 345.7) rotate(-3.5)">
       <path d="M-17.2 -19.8H17.2A19.8 19.8 0 0 1 17.2 19.8H-17.2A19.8 19.8 0 0 1 -17.2 -19.8ZM-16.2 -7.8H16.2A7.8 7.8 0 0 1 16.2 7.8H-16.2A7.8 7.8 0 0 1 -16.2 -7.8Z" fill-rule="evenodd"/>
@@ -151,15 +152,5 @@
     display: block;
     width: 100%;
     height: auto;
-  }
-  /* Pinned so the art matches wherever it's placed: inside an <h1> the
-     inherited bold would make the browser fake a bold League Gothic (it only
-     ships 400), widening the word past the viewBox. */
-  text {
-    font-family: var(--gothic);
-    font-weight: 400;
-    font-style: normal;
-    font-synthesis: none;
-    text-transform: none;
   }
 </style>

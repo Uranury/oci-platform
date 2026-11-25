@@ -37,14 +37,14 @@
 
 <main class="auth">
   <h1><Wordmark /></h1>
-  <p class="tag">Your training log</p>
+  <p class="tag"><dfn>Overlift</dfn> (verb): to lift more than you did last time.</p>
 
-  <div class="modes" role="group" aria-label="Log in or sign up">
+  <div class="modes" data-nosnippet role="group" aria-label="Log in or sign up">
     <button type="button" aria-pressed={mode === "login"} onclick={() => setMode("login")}>Log in</button>
     <button type="button" aria-pressed={mode === "register"} onclick={() => setMode("register")}>Sign up</button>
   </div>
 
-  <form onsubmit={submit}>
+  <form data-nosnippet onsubmit={submit}>
     {#if mode === "register"}
       <Field label="Username">
         <input bind:value={username} name="username" autocomplete="username" required />
@@ -90,6 +90,11 @@
     font-size: 13px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+  }
+  .tag dfn {
+    font-style: normal;
+    font-weight: 700;
+    color: var(--ink);
   }
   .modes {
     display: grid;
