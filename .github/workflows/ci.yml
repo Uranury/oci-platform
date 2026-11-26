@@ -152,7 +152,7 @@ jobs:
           GOARCH: arm64
         run: go build -trimpath -ldflags="-s -w" -o dist/tsis1linux ./cmd/app
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tsis1linux-${{ github.sha }}
           path: dist/tsis1linux
@@ -167,7 +167,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
