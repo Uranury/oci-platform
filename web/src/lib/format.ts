@@ -7,6 +7,18 @@ export function fmtWeight(kg: number): string {
   return (Math.round(kg * 100) / 100).toString();
 }
 
+// YYYY-MM-DD for a local day: what <input type="date"> reads and writes,
+// and how the API takes calendar days.
+export function ymd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// A YYYY-MM-DD day as local midnight; a bare date would be read as UTC.
+export function fromYmd(day: string): Date {
+  return new Date(day + "T00:00");
+}
+
 export function fmtDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;

@@ -113,6 +113,7 @@ func run() error {
 	exerciseHandler := handler.NewExerciseHandler(exerciseService)
 	workoutHandler := handler.NewWorkoutHandler(workoutService)
 	templateHandler := handler.NewTemplateHandler(templateService)
+	bodyweightHandler := handler.NewBodyweightHandler(service.NewBodyweightService(repo.NewBodyweight(pool)))
 
 	webFS, built, err := web.Static()
 	if err != nil {
@@ -122,7 +123,7 @@ func run() error {
 		slog.Warn("frontend not built: serving a placeholder at /; run `npm --prefix web run build` before `go build`")
 	}
 
-	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, templateHandler, jwtIssuer, webFS)
+	router := handler.NewRouter(authHandler, exerciseHandler, workoutHandler, templateHandler, bodyweightHandler, jwtIssuer, webFS)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.ListenHost, cfg.Port),

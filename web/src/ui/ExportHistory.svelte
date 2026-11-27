@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { ApiError, download } from "../lib/api";
+  import { ymd } from "../lib/format";
   import Button from "./Button.svelte";
   import Field from "./Field.svelte";
 
@@ -19,11 +20,6 @@
   let done = $state<string | null>(null);
   let panel = $state<HTMLElement>();
 
-  // YYYY-MM-DD for a local day; what <input type="date"> reads and writes.
-  function ymd(d: Date): string {
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }
   const today = ymd(new Date());
 
   function pick(p: Preset) {

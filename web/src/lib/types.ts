@@ -140,3 +140,11 @@ export interface NewExercise {
   secondary_muscles: string[];
   mechanic: string;
 }
+
+// One day's weigh-in; day is the user's calendar day (YYYY-MM-DD).
+export interface BodyweightEntry {
+  day: string;
+  weight_kg: number;
+  created_at: string;
+  updated_at: string;
+}

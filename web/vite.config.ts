@@ -4,7 +4,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // Paths the Go API answers; `npm run dev` forwards them to the app on :8080
 // (`docker compose -f local/compose.yaml up` or `go run ./cmd/app`), so the
 // frontend gets hot reload while talking to the real backend.
-const api = ["/auth", "/exercise-options", "/exercises", "/workouts", "/templates", "/healthz"];
+const api = ["/auth", "/exercise-options", "/exercises", "/workouts", "/templates", "/bodyweight", "/healthz"];
 const backend = process.env.API_URL ?? "http://localhost:8080";
 
 export default defineConfig({

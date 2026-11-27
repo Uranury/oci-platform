@@ -20,7 +20,7 @@ func init() {
 
 // NewRouter wires the API routes and serves the frontend (static files from
 // webFS) for every GET path no API route claims.
-func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *WorkoutHandler, templateH *TemplateHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
+func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *WorkoutHandler, templateH *TemplateHandler, bodyweightH *BodyweightHandler, jwtIssuer *auth.JWTIssuer, webFS fs.FS) http.Handler {
 	gin.SetMode(gin.ReleaseMode) // no [GIN-debug] route dump on stdout; logging goes through slog
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
@@ -68,6 +68,10 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 	api.PUT("/templates/:id", templateH.Update)
 	api.DELETE("/templates/:id", templateH.Delete)
 	api.POST("/templates/:id/start", templateH.Start)
+
+	api.GET("/bodyweight", bodyweightH.List)
+	api.PUT("/bodyweight/:day", bodyweightH.Put)
+	api.DELETE("/bodyweight/:day", bodyweightH.Delete)
 
 	files := http.FileServerFS(webFS)
 	r.NoRoute(func(c *gin.Context) {
