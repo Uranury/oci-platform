@@ -32,6 +32,41 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = $1
+`
+
+// Cascades to custom exercises, refresh tokens and bodyweights.
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteUserTemplates = `-- name: DeleteUserTemplates :exec
+DELETE FROM workout_templates WHERE user_id = $1
+`
+
+func (q *Queries) DeleteUserTemplates(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserTemplates, userID)
+	return err
+}
+
+const deleteUserWorkouts = `-- name: DeleteUserWorkouts :exec
+
+DELETE FROM workouts WHERE user_id = $1
+`
+
+// The account deletion, in this order inside one transaction: sets and
+// template rows point at exercises with ON DELETE RESTRICT, which a single
+// cascading DELETE FROM users would trip over.
+func (q *Queries) DeleteUserWorkouts(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserWorkouts, userID)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, username, email, password, created_at, updated_at FROM users WHERE email = $1
 `
