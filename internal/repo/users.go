@@ -13,6 +13,9 @@ type User interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	GetByEmail(ctx context.Context, email string) (*models.User, error)
 	Create(ctx context.Context, id uuid.UUID, username, email, password string) error
+	// Delete removes the user and everything they own. It runs several
+	// statements: call it on a transaction's Executor (RunInTx).
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type user struct {
@@ -50,4 +53,14 @@ func (u *user) Create(ctx context.Context, id uuid.UUID, username, email, passwo
 	return translate(u.q.CreateUser(ctx, dbgen.CreateUserParams{
 		ID: id, Username: username, Email: email, Password: password,
 	}))
+}
+
+func (u *user) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := u.q.DeleteUserWorkouts(ctx, id); err != nil {
+		return translate(err)
+	}
+	if err := u.q.DeleteUserTemplates(ctx, id); err != nil {
+		return translate(err)
+	}
+	return affected(u.q.DeleteUser(ctx, id))
 }

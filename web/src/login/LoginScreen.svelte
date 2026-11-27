@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, store, type TokenPair } from "../lib/api";
+  import { takeFlash } from "../lib/flash";
   import Button from "../ui/Button.svelte";
   import Field from "../ui/Field.svelte";
   import Wordmark from "../ui/Wordmark.svelte";
@@ -10,6 +11,7 @@
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
+  const notice = takeFlash(); // "Your account … were deleted."
 
   function setMode(m: "login" | "register") {
     mode = m;
@@ -39,6 +41,8 @@
   <h1><Wordmark /></h1>
   <p class="tag"><dfn>Overlift</dfn> (verb): to lift more than you did last time.</p>
 
+  {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+
   <div class="modes" data-nosnippet role="group" aria-label="Log in or sign up">
     <button type="button" aria-pressed={mode === "login"} onclick={() => setMode("login")}>Log in</button>
     <button type="button" aria-pressed={mode === "register"} onclick={() => setMode("register")}>Sign up</button>
@@ -64,6 +68,12 @@
       />
     </Field>
     {#if mode === "register"}<p class="hint">At least 8 characters.</p>{/if}
+    {#if mode === "register"}
+      <p class="hint">
+        Overlift keeps what you enter (your account and your training) to run the app for you, and nothing else.
+        <a href="#/privacy">How your data is handled</a>
+      </p>
+    {/if}
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -131,6 +141,17 @@
   form {
     display: grid;
     gap: 14px;
+  }
+  .notice {
+    margin: 0 0 20px;
+    padding: 10px 12px;
+    border: 2px solid var(--ink);
+    border-radius: var(--r);
+    font-weight: 700;
+  }
+  .hint a {
+    font-weight: 700;
+    text-underline-offset: 3px;
   }
   .hint {
     margin: -6px 0 0;

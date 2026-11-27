@@ -36,6 +36,7 @@ func NewRouter(authH *AuthHandler, exerciseH *ExerciseHandler, workoutH *Workout
 
 	api := r.Group("/", requireAuth(jwtIssuer))
 	api.POST("/auth/logout-all", authH.LogoutAll)
+	api.POST("/auth/delete-account", authH.DeleteAccount)
 
 	api.GET("/exercises", exerciseH.List)
 	api.POST("/exercises", exerciseH.Create)

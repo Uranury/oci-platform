@@ -16,6 +16,7 @@ var (
 	ErrInvalidCredentials = errors.New("service: invalid email or password")
 	ErrEmailTaken         = errors.New("service: email already registered")
 	ErrInvalidRefresh     = errors.New("service: invalid or expired refresh token")
+	ErrWrongPassword      = errors.New("service: wrong password")
 )
 
 // TokenPair is what login/refresh hand back to the client: a short-lived
@@ -143,6 +144,23 @@ func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error 
 // request.
 func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 	return s.refreshTokens.RevokeAllForUser(ctx, userID)
+}
+
+// DeleteAccount deletes the user and all their data (workouts and sets,
+// templates, custom exercises, bodyweight, refresh tokens) in one
+// transaction, once the password confirms it. Access tokens already issued
+// stay valid until they expire but no longer find anything.
+func (s *AuthService) DeleteAccount(ctx context.Context, userID uuid.UUID, password string) error {
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !auth.CheckPassword(u.Password, password) {
+		return ErrWrongPassword
+	}
+	return s.txProvider.RunInTx(ctx, func(exec dbutil.Executor) error {
+		return repo.NewUser(exec).Delete(ctx, userID)
+	})
 }
 
 func (s *AuthService) issueTokenPair(ctx context.Context, userID uuid.UUID) (*TokenPair, error) {
