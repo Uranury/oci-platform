@@ -48,6 +48,7 @@ func newServerWithPool(t *testing.T) (http.Handler, *pgxpool.Pool) {
 		handler.NewExerciseHandler(service.NewExerciseService(exercises)),
 		handler.NewWorkoutHandler(service.NewWorkoutService(tx, exercises, workouts, sets, repo.NewWorkoutExercise(pool))),
 		handler.NewTemplateHandler(service.NewTemplateService(tx, repo.NewTemplate(pool), exercises, workouts, sets)),
+		handler.NewBodyweightHandler(service.NewBodyweightService(repo.NewBodyweight(pool))),
 		jwt,
 		fstest.MapFS{"index.html": {Data: []byte("<html>")}},
 	), pool
@@ -240,7 +241,7 @@ func TestAuthRequired(t *testing.T) {
 	h := newServer(t)
 	anon := &client{t: t, h: h}
 	bogus := &client{t: t, h: h, token: "not-a-jwt"}
-	for _, path := range []string{"/workouts", "/exercises", "/templates"} {
+	for _, path := range []string{"/workouts", "/exercises", "/templates", "/bodyweight"} {
 		if code, _ := anon.do("GET", path, nil); code != http.StatusUnauthorized {
 			t.Errorf("GET %s without a token: got %d, want 401", path, code)
 		}

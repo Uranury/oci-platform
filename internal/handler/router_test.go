@@ -22,7 +22,7 @@ func TestFrontendFiles(t *testing.T) {
 		"manifest.webmanifest": {Data: []byte("{}")},
 		"assets/index-abc.js":  {Data: []byte("1")},
 	}
-	h := handler.NewRouter(nil, nil, nil, nil, auth.NewJWTIssuer("test-secret-test-secret-test-secret", time.Minute), web)
+	h := handler.NewRouter(nil, nil, nil, nil, nil, auth.NewJWTIssuer("test-secret-test-secret-test-secret", time.Minute), web)
 
 	tests := []struct {
 		method, path string
@@ -60,7 +60,7 @@ func TestFrontendFiles(t *testing.T) {
 func TestSecurityHeaders(t *testing.T) {
 	t.Parallel()
 	web := fstest.MapFS{"index.html": {Data: []byte("<html>")}}
-	h := handler.NewRouter(nil, nil, nil, nil, auth.NewJWTIssuer("test-secret-test-secret-test-secret", time.Minute), web)
+	h := handler.NewRouter(nil, nil, nil, nil, nil, auth.NewJWTIssuer("test-secret-test-secret-test-secret", time.Minute), web)
 
 	for _, path := range []string{"/", "/missing.js", "/healthz", "/workouts"} {
 		rec := httptest.NewRecorder()

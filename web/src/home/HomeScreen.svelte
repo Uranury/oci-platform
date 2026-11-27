@@ -1,5 +1,6 @@
 <script lang="ts">
   import SideMenu from "../ui/SideMenu.svelte";
+  import Bodyweight from "./Bodyweight.svelte";
   import { onMount } from "svelte";
   import { api } from "../lib/api";
   import { takeFlash } from "../lib/flash";
@@ -192,6 +193,8 @@
         </div>
       {/if}
     </section>
+
+    <Bodyweight {say} />
 
     <h2 class="cap history-h">History</h2>
     {#if workouts.length}

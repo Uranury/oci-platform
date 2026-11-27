@@ -11,6 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type Bodyweight struct {
+	UserID    uuid.UUID
+	Day       time.Time
+	WeightKg  float64
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Exercise struct {
 	ID               uuid.UUID
 	UserID           *uuid.UUID
