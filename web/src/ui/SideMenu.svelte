@@ -3,6 +3,7 @@
   import { api, ApiError, logout } from "../lib/api";
   import { setSound, soundOn } from "../lib/sound";
   import Button from "./Button.svelte";
+  import DeleteAccount from "./DeleteAccount.svelte";
   import ExportHistory from "./ExportHistory.svelte";
   import Notice from "./Notice.svelte";
 
@@ -98,6 +99,7 @@
     <section aria-labelledby="menu-data">
       <h3 id="menu-data" class="cap">Your data</h3>
       <ExportHistory />
+      <a class="privacy" href="#/privacy" onclick={() => (open = false)}>Privacy: what Overlift keeps</a>
     </section>
 
     <section aria-labelledby="menu-account" bind:this={account}>
@@ -112,6 +114,9 @@
         <Button wide onclick={logout}>Log out</Button>
         <div class="apart">
           <Button variant="danger" onclick={() => ask(true)}>Log out everywhere</Button>
+        </div>
+        <div class="apart">
+          <DeleteAccount />
         </div>
       {/if}
     </section>
@@ -224,6 +229,18 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 22px;
+  }
+  .privacy {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-top: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    text-underline-offset: 4px;
+  }
+  .apart :global(.panel) {
+    flex: 1;
   }
   .problem {
     margin: 10px 0 0;

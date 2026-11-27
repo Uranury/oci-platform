@@ -132,3 +132,28 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
+// DeleteAccount deletes the authenticated user and everything they own,
+// confirmed with their password. A wrong password is 403, not 401: the
+// client takes 401 to mean an expired session.
+func (h *AuthHandler) DeleteAccount(c *gin.Context) {
+	userID := c.MustGet(userIDKey).(uuid.UUID)
+	var req deleteAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password is required"})
+		return
+	}
+	if err := h.auth.DeleteAccount(c.Request.Context(), userID, req.Password); err != nil {
+		if errors.Is(err, service.ErrWrongPassword) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "wrong password"})
+			return
+		}
+		_ = c.Error(err).SetMeta("account")
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

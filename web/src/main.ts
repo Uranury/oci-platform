@@ -1,5 +1,5 @@
 // Overlift frontend: hash routing onto the Svelte screens.
-//   #/login  #/  #/workouts/<id>  #/exercises
+//   #/login  #/privacy  #/  #/workouts/<id>  #/exercises
 //   #/templates  #/templates/new  #/templates/<id>  #/templates/<id>/edit
 import { mount, unmount, type Component } from "svelte";
 import ExercisesScreen from "./exercises/ExercisesScreen.svelte";
@@ -11,6 +11,7 @@ import "./styles/catalog.css";
 import TemplateEditor from "./templates/TemplateEditor.svelte";
 import TemplateScreen from "./templates/TemplateScreen.svelte";
 import TemplatesScreen from "./templates/TemplatesScreen.svelte";
+import PrivacyScreen from "./privacy/PrivacyScreen.svelte";
 import OfflineBar from "./ui/OfflineBar.svelte";
 import WorkoutScreen from "./workout/WorkoutScreen.svelte";
 
@@ -21,6 +22,7 @@ function screenFor(hash: string): [Component<any>, Record<string, unknown>] | nu
   let m: RegExpMatchArray | null;
   if (hash === "#/") return [HomeScreen, {}];
   if (hash === "#/login") return [LoginScreen, {}];
+  if (hash === "#/privacy") return [PrivacyScreen, {}];
   if (hash === "#/exercises") return [ExercisesScreen, {}];
   if (hash === "#/templates") return [TemplatesScreen, {}];
   if (hash === "#/templates/new") return [TemplateEditor, { id: null }];
@@ -47,7 +49,7 @@ function route(): void {
   setLeaveGuard(null);
 
   const loggedIn = !!store.access;
-  if (!loggedIn && hash !== "#/login") return go("#/login");
+  if (!loggedIn && hash !== "#/login" && hash !== "#/privacy") return go("#/login");
   if (loggedIn && hash === "#/login") return go("#/");
   const screen = screenFor(hash);
   if (!screen) return go("#/");
